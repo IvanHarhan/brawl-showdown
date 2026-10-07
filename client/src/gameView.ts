@@ -62,6 +62,7 @@ export class GameView {
   private superRing: THREE.Mesh | null = null;
   private canBorn = new Map<number, number>();
   private areaMeshes = new Map<number, THREE.Mesh>();
+  private turn = new Map<number, number>();
   private lastRender = { x: 0, y: 0, has: false };
   private seenPos = new Map<number, { x: number; y: number; until: number }>();
 
@@ -510,7 +511,15 @@ export class GameView {
     const nd = this.nudges.get(v.slot);
     if (nd) { const d = Math.exp(-dt * 12); nd.x *= d; nd.y *= d; }
     cv.root.position.set(v.x + (nd?.x ?? 0), (v.flags & F_AIR) ? 0.9 : 0, v.y + (nd?.y ?? 0));
-    cv.root.rotation.y = Math.PI / 2 - v.facing;
+    // плавный разворот вместо мгновенного
+    const want = Math.PI / 2 - v.facing;
+    let cur = this.turn.get(v.slot) ?? want;
+    let dA = want - cur;
+    while (dA > Math.PI) dA -= Math.PI * 2;
+    while (dA < -Math.PI) dA += Math.PI * 2;
+    cur += dA * (1 - Math.exp(-dt * 16));
+    this.turn.set(v.slot, cur);
+    cv.root.rotation.y = cur;
     const isMe = v.slot === w.you;
     let op = 1;
     if (v.flags & F_INVIS) op = isMe ? 0.4 : 0.18 + 0.15 * Math.sin(now / 50);

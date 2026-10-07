@@ -19,15 +19,15 @@
       "skin": "#f2c29b",
       "hair": {
         "style": "crop",
-        "color": "#f4e27a",
-        "under": "#3a2a1c"
+        "color": "#141414",
+        "under": "#141414"
       },
       "beard": null,
       "top": {
         "type": "puffer",
-        "color": "#6b2fb3",
-        "stripe": "#5a26a0",
-        "trim": "#1a1a1a"
+        "color": "#141414",
+        "stripe": "#0d0d0d",
+        "trim": "#2a2a2a"
       },
       "bottom": {
         "type": "flare",
@@ -57,10 +57,10 @@
       },
       "beard": null,
       "top": {
-        "type": "checker",
+        "type": "sweater",
         "color": "#141414",
         "stripe": "#f2f2f2",
-        "boxlogo": true
+        "stripes": 7
       },
       "bottom": {
         "type": "flare",
@@ -107,7 +107,7 @@
       },
       "accessories": [],
       "weapon": "bag",
-      "emblem": "label"
+      "emblem": "none"
     },
     {
       "id": "leon",
@@ -138,7 +138,7 @@
         "earring"
       ],
       "weapon": "shuriken",
-      "emblem": "horseshoe"
+      "emblem": "none"
     },
     {
       "id": "iceberg",
@@ -147,14 +147,14 @@
       "skin": "#d9a27e",
       "hair": {
         "style": "hood",
-        "color": "#3b2c24",
+        "color": "#161616",
         "inner": "#1a1210"
       },
       "beard": null,
       "top": {
         "type": "hoodie",
-        "color": "#3b2c24",
-        "trim": "#cfc6bd",
+        "color": "#161616",
+        "trim": "#cfcfcf",
         "badge": true
       },
       "bottom": {
