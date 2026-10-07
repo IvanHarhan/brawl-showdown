@@ -121,7 +121,7 @@ export class Input {
     // ПК: ЛКМ — атака, ПКМ — супер (по точке мыши)
     root.addEventListener('mousedown', (e) => {
       if (this.isTouch || !this.enabled) return;
-      if ((e.target as HTMLElement).closest('button')) return;
+      if ((e.target as HTMLElement).closest('button, .zone')) return;
       if (e.button === 0) this.h.fire('attack', NaN, 1, false);
       if (e.button === 2) this.pcSuper();
     });
