@@ -50,6 +50,7 @@ export class BotBrain {
   private unstuckUntil = 0;
   private aimError = (Math.random() - 0.5) * 0.1;
   private dodgeX = 0; private dodgeY = 0; private dodgeUntil = 0;
+  private nextShotAt = 0;
 
   constructor(private game: Game, private p: Player) {}
 
@@ -247,7 +248,7 @@ export class BotBrain {
     const b = p.brawler;
     const range = b.attack.range;
     const d = Math.hypot(t.x - p.x, t.y - p.y);
-    if (this.targetSlot !== t.slot) { this.targetSlot = t.slot; this.targetSeenAt = g.time; this.aimError = (g.rand() - 0.5) * 0.35; }
+    if (this.targetSlot !== t.slot) { this.targetSlot = t.slot; this.targetSeenAt = g.time; this.aimError = (g.rand() - 0.5) * 0.6; }
     // бутылка летит над стенами — прямая видимость не нужна
     const los = b.attack.kind === 'lob' || lineOfFire(g.map, p.x, p.y, t.x, t.y);
     const melee = range < 3;
@@ -268,7 +269,7 @@ export class BotBrain {
       this.moveY = ax * this.strafe + ay * back;
     }
 
-    if (g.time - this.targetSeenAt < 0.35) return;
+    if (g.time - this.targetSeenAt < 0.5) return;
     if (p.superCharge >= 1 && this.trySuper(t, d, los)) return;
     if (d <= range * 0.97 && los) this.shootAt(t, d, true);
   }
@@ -276,7 +277,7 @@ export class BotBrain {
   /** Уклонение: если чужой снаряд летит в нас — шаг вбок. */
   private checkDodge() {
     const g = this.game, p = this.p;
-    if (g.time < this.dodgeUntil || g.rand() < 0.25) return;
+    if (g.time < this.dodgeUntil || g.rand() < 0.6) return;
     for (const pr of g.projectiles) {
       if (pr.owner === p.slot) continue;
       const rx = p.x - pr.x, ry = p.y - pr.y;
@@ -293,10 +294,12 @@ export class BotBrain {
 
   private shootAt(t: Player, d: number, lead: boolean) {
     const g = this.game, p = this.p;
-    if (p.ammo < 1 || g.time < p.nextAttackAt) return;
+    // боты не стреляют на каждом откате: пауза между выстрелами как у живого игрока
+    if (p.ammo < 1 || g.time < p.nextAttackAt || g.time < this.nextShotAt) return;
+    this.nextShotAt = g.time + 0.7 + g.rand() * 0.7;
     const a = p.brawler.attack;
     const travel = a.kind === 'lob' ? a.flightTime : d / a.speed;
-    const lf = lead ? 0.3 + g.rand() * 0.7 : 0;
+    const lf = lead ? g.rand() * 0.7 : 0;
     const ex = t.x + t.vx * travel * lf, ey = t.y + t.vy * travel * lf;
     const angle = Math.atan2(ey - p.y, ex - p.x) + this.aimError * (0.5 + g.rand());
     g.attack(p, angle, Math.hypot(ex - p.x, ey - p.y));

@@ -27,6 +27,7 @@
   "C:\Program Files (x86)\Steam\steamapps\common\Blender\blender.exe" --background --factory-startup --python blender_tools/build_characters.py
   ```
   Модели появятся в `assets/models/<id>.glb`.
+- **Надписи на одежде** (`ШОП`, `GAMAS`): `client/src/render/decals.ts` — текст, цвет и место, модель пересобирать не нужно.
 - **Новый боец:** добавь запись в `BRAWLERS` (`shared/brawlers.ts`) и в `characters.json` с тем же `id`, затем пересобери модели.
 - **Фразы:** тексты лежат в `tools/voice_lines.json`, генерация — `python tools/gen_voice.py` (Silero, нужен torch). Свои записи клади в `assets/voice/<id>/` с теми же именами (`attack1.ogg`, `super1.ogg`, `death1.ogg`, `win1.ogg`), потом запусти `python tools/gen_voice.py --convert`: он сделает копии `.m4a` для старых iPhone и обновит список фраз.
 

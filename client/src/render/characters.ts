@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { BRAWLERS } from '../../../shared/brawlers';
 import { toonMaterial, outlineMaterial, outlineGeometry } from './toon';
+import { attachDecal } from './decals';
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<GLTF | null>>();
@@ -66,6 +67,7 @@ export class CharacterView {
         this.outlines.push(o2);
       }
     });
+    attachDecal(this.brawlerId, model);
     this.model = model;
     this.root.add(model);
     this.mixer = new THREE.AnimationMixer(model);
