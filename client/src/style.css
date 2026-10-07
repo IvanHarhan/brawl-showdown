@@ -190,3 +190,4 @@ html, body {
 .kf.me { background: #c62828cc; }
 .fade { position: absolute; inset: 0; background: var(--bg); pointer-events: none; transition: opacity .7s ease-out; }
 .fade.gone { opacity: 0; }
+.tag3d { transform-origin: 0 0; }

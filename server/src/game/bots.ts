@@ -125,9 +125,9 @@ export class BotBrain {
       const d = Math.hypot(o.x - p.x, o.y - p.y);
       if (d > 13) continue;
       // в начале катки ломаем ящики, дерёмся только с теми, кто рядом
-      if (g.time < 25 && d > 7) continue;
+      if (g.time < 45 && d > 6) continue;
       // первые секунды не нападаем первыми — только отвечаем
-      if (g.time < 20 && g.time - p.lastHurt > 1.5) continue;
+      if (g.time < 35 && g.time - p.lastHurt > 1.5) continue;
       const weaker = o.hp <= p.hp * 1.4 || o.cans < p.cans || o.hp < g.maxHp(o) * 0.5;
       if (!weaker && d > range + 1.5) continue;
       const score = d - (weaker ? 4 : 0) + (o.hp / g.maxHp(o)) * 3;
@@ -246,7 +246,7 @@ export class BotBrain {
     const b = p.brawler;
     const range = b.attack.range;
     const d = Math.hypot(t.x - p.x, t.y - p.y);
-    if (this.targetSlot !== t.slot) { this.targetSlot = t.slot; this.targetSeenAt = g.time; this.aimError = (g.rand() - 0.5) * 0.25; }
+    if (this.targetSlot !== t.slot) { this.targetSlot = t.slot; this.targetSeenAt = g.time; this.aimError = (g.rand() - 0.5) * 0.35; }
     const los = lineOfFire(g.map, p.x, p.y, t.x, t.y);
     const melee = range < 3;
     const want = melee ? 0.8 : range * 0.7;
@@ -266,7 +266,7 @@ export class BotBrain {
       this.moveY = ax * this.strafe + ay * back;
     }
 
-    if (g.time - this.targetSeenAt < 0.15) return;
+    if (g.time - this.targetSeenAt < 0.35) return;
     if (p.superCharge >= 1 && this.trySuper(t, d, los)) return;
     if (d <= range * 0.97 && los) this.shootAt(t, d, true);
   }
@@ -294,7 +294,8 @@ export class BotBrain {
     if (p.ammo < 1 || g.time < p.nextAttackAt) return;
     const a = p.brawler.attack;
     const travel = d / a.speed;
-    const ex = t.x + (lead ? t.vx * travel : 0), ey = t.y + (lead ? t.vy * travel : 0);
+    const lf = lead ? 0.3 + g.rand() * 0.7 : 0;
+    const ex = t.x + t.vx * travel * lf, ey = t.y + t.vy * travel * lf;
     const angle = Math.atan2(ey - p.y, ex - p.x) + this.aimError * (0.5 + g.rand());
     g.attack(p, angle);
   }
