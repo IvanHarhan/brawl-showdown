@@ -3,7 +3,7 @@ import { stepPlayer } from '../../shared/physics';
 import { Brawler, getBrawler } from '../../shared/brawlers';
 import { INTERP_DELAY_MS, TICK_DT } from '../../shared/constants';
 import {
-  Snapshot, StartMsg, RosterEntry, PlayerSnap, ProjSnap, MinionSnap, CanSnap, GameEvent, InputItem,
+  Snapshot, StartMsg, RosterEntry, PlayerSnap, ProjSnap, MinionSnap, CanSnap, AreaSnap, GameEvent, InputItem,
   F_ALIVE, F_LOCKED,
 } from '../../shared/protocol';
 
@@ -16,6 +16,7 @@ interface Snap {
   proj: Map<number, ProjSnap>;
   minions: Map<number, MinionSnap>;
   cans: CanSnap[];
+  areas: AreaSnap[];
   gas: number;
   alive: number;
   el: number;
@@ -76,7 +77,7 @@ export class ClientWorld {
       players: new Map(s.p.map((p) => [p[0], p])),
       proj: new Map(s.pr.map((p) => [p[0], p])),
       minions: new Map(s.mn.map((m) => [m[0], m])),
-      cans: s.c, gas: s.gas / 100, alive: s.alive, el: s.el / 10,
+      cans: s.c, areas: s.ar ?? [], gas: s.gas / 100, alive: s.alive, el: s.el / 10,
     };
     if (this.latest && snap.t <= this.latest.t) return;
     const sample = snap.ms - now;
@@ -196,7 +197,7 @@ export class ClientWorld {
     const br = this.bracket(now);
     if (!br) return [];
     const [a, b, k] = br;
-    const out: { id: number; look: number; x: number; y: number; a: number }[] = [];
+    const out: { id: number; look: number; x: number; y: number; a: number; h: number }[] = [];
     // свои снаряды — без задержки интерполяции: последний снапшот + экстраполяция на полпинга,
     // чтобы пуля вылетала из ствола сразу после клика
     const L = this.latest!;
@@ -204,16 +205,16 @@ export class ClientWorld {
     for (const [id, p] of L.proj) {
       if (p[6] !== this.you) continue;
       const ang = p[4] / 100, sp = p[5] / 10;
-      out.push({ id, look: p[1], x: p[2] / 100 + Math.cos(ang) * sp * ahead, y: p[3] / 100 + Math.sin(ang) * sp * ahead, a: ang });
+      out.push({ id, look: p[1], x: p[2] / 100 + Math.cos(ang) * sp * ahead, y: p[3] / 100 + Math.sin(ang) * sp * ahead, a: ang, h: p[7] / 100 });
     }
     for (const [id, pb] of b.proj) {
       if (pb[6] === this.you) continue;
       const pa = a.proj.get(id);
-      if (!pa) { if (k > 0.3 || a === b) out.push({ id, look: pb[1], x: pb[2] / 100, y: pb[3] / 100, a: pb[4] / 100 }); continue; }
-      out.push({ id, look: pb[1], x: (pa[2] + (pb[2] - pa[2]) * k) / 100, y: (pa[3] + (pb[3] - pa[3]) * k) / 100, a: pb[4] / 100 });
+      if (!pa) { if (k > 0.3 || a === b) out.push({ id, look: pb[1], x: pb[2] / 100, y: pb[3] / 100, a: pb[4] / 100, h: pb[7] / 100 }); continue; }
+      out.push({ id, look: pb[1], x: (pa[2] + (pb[2] - pa[2]) * k) / 100, y: (pa[3] + (pb[3] - pa[3]) * k) / 100, a: pb[4] / 100, h: (pa[7] + (pb[7] - pa[7]) * k) / 100 });
     }
     // долетающие в последний кадр снаряды
-    if (a !== b) for (const [id, pa] of a.proj) if (pa[6] !== this.you && !b.proj.has(id) && k < 0.5) out.push({ id, look: pa[1], x: pa[2] / 100, y: pa[3] / 100, a: pa[4] / 100 });
+    if (a !== b) for (const [id, pa] of a.proj) if (pa[6] !== this.you && !b.proj.has(id) && k < 0.5) out.push({ id, look: pa[1], x: pa[2] / 100, y: pa[3] / 100, a: pa[4] / 100, h: pa[7] / 100 });
     return out;
   }
 
@@ -226,6 +227,9 @@ export class ClientWorld {
       return { id: mb[0], type: mb[1], x: (ma[2] + (mb[2] - ma[2]) * k) / 100, y: (ma[3] + (mb[3] - ma[3]) * k) / 100, hp: mb[4], maxHp: mb[5], owner: mb[6], facing: mb[7] / 100 };
     });
   }
+
+  /** Лужи от бутылок (из свежего снапшота). */
+  areas() { return (this.latest?.areas ?? []).map((a) => ({ id: a[0], x: a[1] / 100, y: a[2] / 100, r: a[3] / 100, owner: a[4] })); }
 
   cans(now: number) {
     const br = this.bracket(now);

@@ -212,15 +212,16 @@ export class BotBrain {
     if (bi < 0) return false;
     const bx = (bi % g.map.w) + 0.5, by = Math.floor(bi / g.map.w) + 0.5;
     const want = Math.max(1.1, Math.min(range * 0.75, 4));
-    const clear = this.clearShot(p.x, p.y, bx, by, bi);
+    const lob = p.brawler.attack.kind === 'lob';
+    const clear = lob || this.clearShot(p.x, p.y, bx, by, bi);
     if (bd <= want && clear) {
       this.path = []; this.moveX = 0; this.moveY = 0;
       const a = Math.atan2(by - p.y, bx - p.x);
-      if (p.ammo >= 1) g.attack(p, a);
+      if (p.ammo >= 1) g.attack(p, a, bd);
     } else {
       this.goTo((tx, ty) => {
         const d = Math.hypot(tx + 0.5 - bx, ty + 0.5 - by);
-        return d <= want && this.clearShot(tx + 0.5, ty + 0.5, bx, by, bi);
+        return d <= want && (lob || this.clearShot(tx + 0.5, ty + 0.5, bx, by, bi));
       });
     }
     return true;
@@ -247,7 +248,8 @@ export class BotBrain {
     const range = b.attack.range;
     const d = Math.hypot(t.x - p.x, t.y - p.y);
     if (this.targetSlot !== t.slot) { this.targetSlot = t.slot; this.targetSeenAt = g.time; this.aimError = (g.rand() - 0.5) * 0.35; }
-    const los = lineOfFire(g.map, p.x, p.y, t.x, t.y);
+    // бутылка летит над стенами — прямая видимость не нужна
+    const los = b.attack.kind === 'lob' || lineOfFire(g.map, p.x, p.y, t.x, t.y);
     const melee = range < 3;
     const want = melee ? 0.8 : range * 0.7;
 
@@ -293,11 +295,11 @@ export class BotBrain {
     const g = this.game, p = this.p;
     if (p.ammo < 1 || g.time < p.nextAttackAt) return;
     const a = p.brawler.attack;
-    const travel = d / a.speed;
+    const travel = a.kind === 'lob' ? a.flightTime : d / a.speed;
     const lf = lead ? 0.3 + g.rand() * 0.7 : 0;
     const ex = t.x + t.vx * travel * lf, ey = t.y + t.vy * travel * lf;
     const angle = Math.atan2(ey - p.y, ex - p.x) + this.aimError * (0.5 + g.rand());
-    g.attack(p, angle);
+    g.attack(p, angle, Math.hypot(ex - p.x, ey - p.y));
   }
 
   private trySuper(t: Player, d: number, los: boolean): boolean {

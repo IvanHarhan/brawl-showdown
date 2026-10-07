@@ -10,6 +10,7 @@ mkdirSync(out, { recursive: true });
 
 const b = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await b.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: !!process.env.TOUCH, isMobile: !!process.env.TOUCH });
+if (process.env.BRAWLER) await ctx.addInitScript((id) => localStorage.setItem('brawl_brawler', id), process.env.BRAWLER);
 const page = await ctx.newPage();
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });

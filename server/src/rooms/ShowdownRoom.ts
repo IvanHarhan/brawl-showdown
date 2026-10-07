@@ -68,9 +68,9 @@ export class ShowdownRoom extends Room {
       const p = this.bySid.get(client.sessionId);
       if (p && this.game && !p.bot) this.game.queueInputs(p, items);
     });
-    this.onMessage('atk', (client, msg: { a: number }) => {
+    this.onMessage('atk', (client, msg: { a: number; d?: number }) => {
       const p = this.bySid.get(client.sessionId);
-      if (p && this.game && !p.bot) { this.game.queueAttack(p, +msg?.a); this.game.processNow(p); }
+      if (p && this.game && !p.bot) { this.game.queueAttack(p, +msg?.a, msg?.d === undefined ? NaN : +msg.d); this.game.processNow(p); }
     });
     this.onMessage('sup', (client, msg: { a: number; d: number }) => {
       const p = this.bySid.get(client.sessionId);

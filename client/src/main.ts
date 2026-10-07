@@ -124,10 +124,13 @@ function setPreview(id: string) {
 const DESCR: Record<string, string> = {
   drip: 'Очередь из 6 пуль. Супер — длинная очередь, ломает стены.',
   mrp: 'Табличка перепрыгивает укрытия. Супер — база с помощниками.',
-  bubu: 'Дробовик вблизи, много HP. Супер — рывок сквозь стены.',
+  shop: 'Стреляет бургерами веером, много HP. Супер — рывок сквозь стены.',
   leon: 'Веер сюрикенов. Супер — невидимость на 6 секунд.',
   iceberg: 'Серия быстрых ударов. Супер — прыжок с уроном по области.',
   ali: 'Тяжёлые удары. Супер — рывок с захватом и броском.',
+  hussein: 'Кидает бутылки через стены, на земле остаётся лужа. Супер — 5 бутылок.',
+  gamas: 'Мячи отскакивают от стен. Супер — длинная очередь рикошетов.',
+  bit8: 'Медленный, но лазеры бьют далеко. Супер — турель, рядом с ней урон ×1.6.',
 };
 
 function showMenu() {
@@ -181,7 +184,7 @@ function showMenu() {
 
 function atkDamage(id: string) {
   const a = getBrawler(id).attack;
-  return a.kind === 'burst' ? `${a.damage}×${a.count}` : a.kind === 'spread' ? `${a.damage}×${a.count}` : a.damage;
+  return a.kind === 'burst' ? `${a.damage}×${a.count}` : a.kind === 'spread' ? `${a.damage}×${a.count}` : a.kind === 'lob' ? `${a.damage}/0.5с` : a.damage;
 }
 
 function joinOpts() {
@@ -423,7 +426,7 @@ function showcase() {
     const now = performance.now();
     const dt = (now - last) / 1000; last = now;
     const aspect = innerWidth / innerHeight;
-    const dist = Math.max(8 / (2 * Math.tan((15 * Math.PI) / 180) * aspect), 3.5);
+    const dist = Math.max((n * 1.3) / (2 * Math.tan((15 * Math.PI) / 180) * aspect), 3.5);
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     camera.position.set(0, 1.2 + dist * 0.12, dist);

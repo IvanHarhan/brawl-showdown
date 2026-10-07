@@ -2,7 +2,7 @@
 // поменяй числа или kind атаки/супера — и боец поменяется без правок кода.
 // Единицы: расстояние в клетках, время в секундах, скорость в клетках/с.
 
-export type ProjectileLook = 'bullet' | 'pellet' | 'shuriken' | 'fist' | 'sign' | 'heavy';
+export type ProjectileLook = 'bullet' | 'pellet' | 'shuriken' | 'fist' | 'sign' | 'heavy' | 'burger' | 'bottle' | 'laser' | 'ball';
 
 /** Очередь снарядов по прямой (Кольт, кулаки). */
 export interface BurstAttack {
@@ -15,6 +15,7 @@ export interface BurstAttack {
   radius: number;       // толщина снаряда
   jitterDeg: number;    // случайный разброс каждого снаряда
   breaksWalls?: boolean;
+  bounces?: number;     // сколько раз отскакивает от стен (Рико)
   look: ProjectileLook;
 }
 
@@ -44,7 +45,21 @@ export interface BouncerAttack {
   look: ProjectileLook;
 }
 
-export type Attack = BurstAttack | SpreadAttack | BouncerAttack;
+/** Бросок по дуге в точку: летит над стенами, на земле остаётся лужа с уроном (Барли). */
+export interface LobAttack {
+  kind: 'lob';
+  damage: number;       // урон за один тик лужи
+  range: number;
+  flightTime: number;
+  radius: number;       // радиус лужи
+  duration: number;     // сколько живёт лужа
+  tickEvery: number;
+  count: number;        // бутылок за раз (у супера больше)
+  scatter: number;      // разброс точек падения вокруг прицела
+  look: ProjectileLook;
+}
+
+export type Attack = BurstAttack | SpreadAttack | BouncerAttack | LobAttack;
 
 /** База, из которой выбегают помощники. */
 export interface BaseSuper {
@@ -90,7 +105,16 @@ export interface GrabSuper {
   stun: number;
 }
 
-export type Super = (BurstAttack & { aim?: 'line' }) | BaseSuper | ChargeSuper | InvisibleSuper | JumpSuper | GrabSuper;
+/** Турель-усилитель (8-Бит): пока стоишь рядом, урон выше. */
+export interface BoosterSuper {
+  kind: 'booster';
+  hp: number;
+  lifetime: number;
+  radius: number;
+  mult: number;
+}
+
+export type Super = (BurstAttack & { aim?: 'line' }) | LobAttack | BaseSuper | ChargeSuper | InvisibleSuper | JumpSuper | GrabSuper | BoosterSuper;
 
 export interface Brawler {
   id: string;           // имя модели assets/models/<id>.glb и папки assets/voice/<id>/
@@ -123,12 +147,11 @@ export const BRAWLERS: Brawler[] = [
       minion: { hp: 1000, damage: 260, speed: 2.9, attackInterval: 0.8, sight: 9 } },
   },
   {
-    id: 'bubu', name: 'Бу-бу', color: '#4a7dff',
-    hp: 5000, speed: 2.4, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 2600,
-    attack: { kind: 'spread', count: 5, spreadDeg: 30, damage: 400, minFalloff: 0.35, range: 5, speed: 11, radius: 0.16, look: 'pellet' },
+    id: 'shop', name: 'Шоп', color: '#e53935',
+    hp: 5200, speed: 2.4, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 2600,
+    attack: { kind: 'spread', count: 5, spreadDeg: 30, damage: 400, minFalloff: 0.35, range: 5, speed: 11, radius: 0.18, look: 'burger' },
     super: { kind: 'charge', range: 9, speed: 8, damage: 800, knockback: 2, breaksWalls: true },
-  },
-  {
+  },  {
     id: 'leon', name: 'Леон', color: '#7fbf4a',
     hp: 3200, speed: 2.75, ammo: 3, reload: 1.9, cooldown: 0.5, superCharge: 2600,
     attack: { kind: 'spread', count: 4, spreadDeg: 26, damage: 480, minFalloff: 0.55, range: 9.7, speed: 12, radius: 0.16, look: 'shuriken' },
@@ -146,7 +169,26 @@ export const BRAWLERS: Brawler[] = [
     attack: { kind: 'burst', count: 3, interval: 0.17, damage: 440, range: 3, speed: 13, radius: 0.48, jitterDeg: 5, look: 'fist' },
     super: { kind: 'grab', range: 6, speed: 9, damage: 700, throwDistance: 3.5, stun: 0.4 },
   },
+  {
+    id: 'hussein', name: 'Хуссейн', color: '#2f80ed',
+    hp: 4600, speed: 2.4, ammo: 3, reload: 1.8, cooldown: 0.5, superCharge: 2400,
+    attack: { kind: 'lob', damage: 380, range: 7.5, flightTime: 0.6, radius: 1.1, duration: 1.6, tickEvery: 0.5, count: 1, scatter: 0, look: 'bottle' },
+    super: { kind: 'lob', damage: 380, range: 7.5, flightTime: 0.75, radius: 1.1, duration: 2.5, tickEvery: 0.5, count: 5, scatter: 1.7, look: 'bottle' },
+  },
+  {
+    id: 'gamas', name: 'Гамас', color: '#f2c94c',
+    hp: 2800, speed: 2.4, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 3000,
+    attack: { kind: 'burst', count: 5, interval: 0.1, damage: 320, range: 9.5, speed: 13, radius: 0.14, jitterDeg: 2, bounces: 2, look: 'ball' },
+    super: { kind: 'burst', count: 12, interval: 0.06, damage: 320, range: 12, speed: 14, radius: 0.16, jitterDeg: 3, bounces: 3, look: 'ball' },
+  },
+  {
+    id: 'bit8', name: '8-Бит', color: '#9b51e0',
+    hp: 5000, speed: 2.0, ammo: 3, reload: 1.7, cooldown: 0.5, superCharge: 3200,
+    attack: { kind: 'burst', count: 6, interval: 0.05, damage: 330, range: 10.5, speed: 15, radius: 0.13, jitterDeg: 4, look: 'laser' },
+    super: { kind: 'booster', hp: 3000, lifetime: 20, radius: 5.5, mult: 1.6 },
+  },
 ];
+
 export const BRAWLER_BY_ID: Record<string, Brawler> = Object.fromEntries(BRAWLERS.map((b) => [b.id, b]));
 
 export function getBrawler(id: string | undefined): Brawler {
@@ -155,13 +197,13 @@ export function getBrawler(id: string | undefined): Brawler {
 
 /** Как целиться суперу: линия, точка на земле или без прицела. */
 export function superAimType(s: Super): 'line' | 'point' | 'self' {
-  if (s.kind === 'base' || s.kind === 'jump') return 'point';
-  if (s.kind === 'invisible') return 'self';
+  if (s.kind === 'base' || s.kind === 'jump' || s.kind === 'lob') return 'point';
+  if (s.kind === 'invisible' || s.kind === 'booster') return 'self';
   return 'line';
 }
 
 export function superRange(s: Super): number {
-  return s.kind === 'invisible' ? 0 : s.range;
+  return s.kind === 'invisible' || s.kind === 'booster' ? 0 : s.range;
 }
 
 export function attackRange(a: Attack): number {

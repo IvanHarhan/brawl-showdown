@@ -1,5 +1,5 @@
 import {
-  Brawler, getBrawler, Attack, BurstAttack, SpreadAttack, BouncerAttack, BaseSuper,
+  Brawler, getBrawler, Attack, BurstAttack, SpreadAttack, BouncerAttack, BaseSuper, LobAttack, BoosterSuper,
 } from '../../../shared/brawlers';
 import {
   GameMap, Tile, parseMap, mapToText, tileAt, setTile, blocksShot, blocksMove,
@@ -11,13 +11,13 @@ import {
 } from '../../../shared/constants';
 import {
   LOOKS, F_ALIVE, F_BUSH, F_INVIS, F_LOCKED, F_AIR, F_STUN, F_OFFLINE, F_REVEALED,
-  GameEvent, Snapshot, PlayerSnap, ProjSnap, MinionSnap, CanSnap, InputItem, StartMsg, RosterEntry, ResultEntry,
+  GameEvent, Snapshot, PlayerSnap, ProjSnap, AreaSnap, MinionSnap, CanSnap, InputItem, StartMsg, RosterEntry, ResultEntry,
 } from '../../../shared/protocol';
 import { BotBrain } from './bots';
 
 export type QueueItem =
   | { k: 'm'; seq: number; mx: number; my: number; dt: number }
-  | { k: 'a'; angle: number }
+  | { k: 'a'; angle: number; dist: number }
   | { k: 's'; angle: number; dist: number };
 
 export type Forced =
@@ -62,13 +62,21 @@ export interface Projectile {
   traveled: number; range: number; damage: number; radius: number;
   minFalloff: number; breaksWalls: boolean; chargesSuper: boolean;
   bouncer: { hop: number; splashR: number; splashDmg: number; hopping: boolean; hopLeft: number } | null;
+  bounces: number;
+  lob: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number; spec: LobAttack; mult: number } | null;
+}
+
+/** Лужа от бутылки: бьёт врагов внутри раз в tickEvery. */
+export interface Area {
+  id: number; owner: number; x: number; y: number; r: number;
+  until: number; nextTick: number; damage: number; tickEvery: number; charges: boolean;
 }
 
 export interface Minion {
-  id: number; type: 0 | 1; owner: number;
+  id: number; type: 0 | 1 | 2; owner: number;
   x: number; y: number; hp: number; maxHp: number; facing: number;
   nextSpawn: number; expires: number; nextAttack: number;
-  spec: BaseSuper;
+  spec: BaseSuper | BoosterSuper;
 }
 
 export interface Can { id: number; x: number; y: number; readyAt: number }
@@ -98,6 +106,7 @@ export class Game {
   map: GameMap;
   players: Player[] = [];
   projectiles: Projectile[] = [];
+  areas: Area[] = [];
   minions: Minion[] = [];
   cans: Can[] = [];
   boxHp = new Map<number, number>();
@@ -149,7 +158,14 @@ export class Game {
   start() { this.started = true; }
 
   maxHp(p: Player) { return Math.round(p.brawler.hp * (1 + CAN_BONUS * p.cans)); }
-  dmgMult(p: Player) { return 1 + CAN_BONUS * p.cans; }
+  dmgMult(p: Player) {
+    let k = 1 + CAN_BONUS * p.cans;
+    // турель-усилитель 8-Бита: урон выше, пока стоишь рядом
+    for (const m of this.minions) {
+      if (m.type === 2 && m.owner === p.slot && m.spec.kind === 'booster' && Math.hypot(m.x - p.x, m.y - p.y) <= m.spec.radius) k *= m.spec.mult;
+    }
+    return k;
+  }
   aliveCount() { let n = 0; for (const p of this.players) if (p.alive) n++; return n; }
 
   gasHalf(t = this.time) {
@@ -190,7 +206,7 @@ export class Game {
     if (p.queue.length > 120) p.queue.splice(0, p.queue.length - 120);
   }
 
-  queueAttack(p: Player, angle: number) { if (Number.isFinite(angle)) p.queue.push({ k: 'a', angle }); }
+  queueAttack(p: Player, angle: number, dist = NaN) { if (Number.isFinite(angle)) p.queue.push({ k: 'a', angle, dist: Number.isFinite(dist) ? dist : 99 }); }
   queueSuper(p: Player, angle: number, dist: number) {
     if (Number.isFinite(angle)) p.queue.push({ k: 's', angle, dist: Number.isFinite(dist) ? dist : 99 });
   }
@@ -199,7 +215,7 @@ export class Game {
 
   // ---------- атаки ----------
 
-  attack(p: Player, angle: number): boolean {
+  attack(p: Player, angle: number, dist = 99): boolean {
     if (!this.canAct(p) || p.ammo < 1 || this.time < p.nextAttackAt) return false;
     const a = p.brawler.attack;
     p.ammo -= 1;
@@ -207,7 +223,7 @@ export class Game {
     p.nextAttackAt = this.time + Math.max(p.brawler.cooldown, busy);
     this.onCombatAction(p, angle);
     this.events.push(['shot', p.slot, r100(angle), 0]);
-    this.fire(p, a, angle, true);
+    this.fire(p, a, angle, true, dist);
     return true;
   }
 
@@ -218,8 +234,26 @@ export class Game {
     p.facing = angle;
   }
 
-  private fire(p: Player, a: Attack, angle: number, charges: boolean) {
+  private fire(p: Player, a: Attack, angle: number, charges: boolean, dist = 99) {
     const mult = this.dmgMult(p);
+    if (a.kind === 'lob') {
+      const d = Math.min(Math.max(0.5, dist), a.range);
+      const cx = p.x + Math.cos(angle) * d, cy = p.y + Math.sin(angle) * d;
+      for (let i = 0; i < a.count; i++) {
+        // первая бутылка в прицел, остальные — кругом вокруг
+        const ang = (i / Math.max(1, a.count - 1)) * Math.PI * 2;
+        const tx = Math.min(this.map.w - 0.3, Math.max(0.3, cx + (i ? Math.cos(ang) * a.scatter : 0)));
+        const ty = Math.min(this.map.h - 0.3, Math.max(0.3, cy + (i ? Math.sin(ang) * a.scatter : 0)));
+        const len = Math.hypot(tx - p.x, ty - p.y) || 0.01;
+        this.projectiles.push({
+          id: this.nextId++, owner: p.slot, look: LOOKS.indexOf(a.look), x: p.x, y: p.y, dx: (tx - p.x) / len, dy: (ty - p.y) / len,
+          speed: len / a.flightTime, traveled: 0, range: len, damage: a.damage * mult, radius: 0, minFalloff: 1,
+          breaksWalls: false, chargesSuper: charges, bouncer: null, bounces: 0,
+          lob: { fx: p.x, fy: p.y, tx, ty, t: 0, dur: a.flightTime * (i ? 1.1 : 1), spec: a, mult },
+        });
+      }
+      return;
+    }
     if (a.kind === 'burst') {
       for (let i = 0; i < a.count; i++) this.scheduled.push({ at: this.time + i * a.interval, slot: p.slot, angle, attack: a, charges, mult });
       this.runScheduled();
@@ -233,7 +267,7 @@ export class Game {
     }
   }
 
-  private spawnProjectile(p: Player, a: Attack, angle: number, damage: number, charges: boolean, advance: number) {
+  private spawnProjectile(p: Player, a: Exclude<Attack, LobAttack>, angle: number, damage: number, charges: boolean, advance: number) {
     const dx = Math.cos(angle), dy = Math.sin(angle);
     const pr: Projectile = {
       id: this.nextId++, owner: p.slot, look: LOOKS.indexOf(a.look),
@@ -245,6 +279,8 @@ export class Game {
       bouncer: a.kind === 'bouncer'
         ? { hop: a.hopDistance, splashR: a.splashRadius, splashDmg: a.splashDamage * (damage / a.damage), hopping: false, hopLeft: 0 }
         : null,
+      bounces: a.kind === 'burst' ? a.bounces ?? 0 : 0,
+      lob: null,
     };
     this.projectiles.push(pr);
     if (advance > 0) this.moveProjectile(pr, advance);
@@ -277,6 +313,20 @@ export class Game {
         this.fire(p, s, angle, false);
         p.nextAttackAt = Math.max(p.nextAttackAt, this.time + s.count * s.interval);
         break;
+      case 'lob':
+        this.onCombatAction(p, angle);
+        this.events.push(['shot', p.slot, r100(angle), 1]);
+        this.fire(p, s, angle, false, dist);
+        break;
+      case 'booster': {
+        const pos = nearestWalkable(this.map, p.x, p.y);
+        this.minions = this.minions.filter((m) => !(m.type === 2 && m.owner === p.slot));
+        this.minions.push({
+          id: this.nextId++, type: 2, owner: p.slot, x: pos.x, y: pos.y, hp: s.hp, maxHp: s.hp, facing: angle,
+          nextSpawn: 0, expires: this.time + s.lifetime, nextAttack: 0, spec: s,
+        });
+        break;
+      }
       case 'base': {
         const d = Math.min(Math.max(0, dist), s.range);
         const pos = nearestWalkable(this.map, p.x + dx * d, p.y + dy * d);
@@ -412,7 +462,7 @@ export class Game {
           if (Math.abs(it.mx) + Math.abs(it.my) > 0.15) p.facing = this.time < p.lastCombat + 0.4 ? p.facing : Math.atan2(it.my, it.mx);
         }
         p.ack = it.seq;
-      } else if (it.k === 'a') this.attack(p, it.angle);
+      } else if (it.k === 'a') this.attack(p, it.angle, it.dist);
       else this.superAttack(p, it.angle, it.dist);
       p.queue.shift();
     }
@@ -550,6 +600,16 @@ export class Game {
       if (blocksShot(t)) {
         if (t === Tile.Box) { this.damageBox(ty * this.map.w + tx, pr.damage * this.falloff(pr)); return false; }
         if (pr.breaksWalls) { this.breakWall(tx, ty); continue; }
+        if (pr.bounces > 0) {
+          // рикошет: откатываемся и отражаем ту ось, по которой вошли в стену
+          const px = pr.x - pr.dx * st, py = pr.y - pr.dy * st;
+          const hitX = blocksShot(tileAt(this.map, Math.floor(pr.x), Math.floor(py)));
+          const hitY = blocksShot(tileAt(this.map, Math.floor(px), Math.floor(pr.y)));
+          if (hitX || !hitY) pr.dx = -pr.dx;
+          if (hitY || !hitX) pr.dy = -pr.dy;
+          pr.x = px; pr.y = py; pr.bounces--;
+          continue;
+        }
         if (pr.bouncer) { pr.bouncer.hopping = true; pr.bouncer.hopLeft = pr.bouncer.hop; continue; }
         this.events.push(['boom', r100(pr.x - pr.dx * 0.2), r100(pr.y - pr.dy * 0.2), 0]);
         return false;
@@ -563,7 +623,7 @@ export class Game {
       }
       for (const m of this.minions) {
         if (m.owner === pr.owner) continue;
-        const mr = m.type === 0 ? 0.5 : 0.28;
+        const mr = m.type === 1 ? 0.28 : 0.5;
         if ((m.x - pr.x) ** 2 + (m.y - pr.y) ** 2 < (mr + pr.radius) ** 2) {
           this.damageMinion(m, pr.damage * this.falloff(pr), owner ?? null, pr.chargesSuper);
           return false;
@@ -589,12 +649,38 @@ export class Game {
   }
 
   private updateProjectiles(dt: number) {
-    this.projectiles = this.projectiles.filter((pr) => this.moveProjectile(pr, pr.speed * dt));
+    this.projectiles = this.projectiles.filter((pr) => {
+      if (!pr.lob) return this.moveProjectile(pr, pr.speed * dt);
+      const L = pr.lob;
+      L.t += dt;
+      const k = Math.min(1, L.t / L.dur);
+      pr.x = L.fx + (L.tx - L.fx) * k; pr.y = L.fy + (L.ty - L.fy) * k;
+      if (k < 1) return true;
+      this.events.push(['boom', r100(L.tx), r100(L.ty), r100(L.spec.radius)]);
+      this.areas.push({ id: this.nextId++, owner: pr.owner, x: L.tx, y: L.ty, r: L.spec.radius, until: this.time + L.spec.duration,
+        nextTick: this.time, damage: L.spec.damage * L.mult, tickEvery: L.spec.tickEvery, charges: pr.chargesSuper });
+      return false;
+    });
+    this.areas = this.areas.filter((a) => {
+      if (this.time >= a.nextTick) {
+        a.nextTick += a.tickEvery;
+        const owner = this.players[a.owner] ?? null;
+        for (const o of this.enemiesNear(a.x, a.y, a.r + PLAYER_RADIUS * 0.5, a.owner)) this.damagePlayer(o, a.damage, owner, a.charges);
+        for (const m of this.minions) if (m.owner !== a.owner && Math.hypot(m.x - a.x, m.y - a.y) < a.r) this.damageMinion(m, a.damage, owner, a.charges);
+        // лужа разъедает ящики под собой
+        for (let ty = Math.floor(a.y - a.r); ty <= Math.floor(a.y + a.r); ty++)
+          for (let tx = Math.floor(a.x - a.r); tx <= Math.floor(a.x + a.r); tx++)
+            if (tileAt(this.map, tx, ty) === Tile.Box && Math.hypot(tx + 0.5 - a.x, ty + 0.5 - a.y) < a.r + 0.5) this.damageBox(ty * this.map.w + tx, a.damage);
+      }
+      return this.time < a.until;
+    });
   }
 
   private updateMinions(dt: number) {
     const spawned: Minion[] = [];
     for (const m of this.minions) {
+      if (m.type === 2) { if (this.time >= m.expires) m.hp = 0; continue; }
+      if (m.spec.kind !== 'base') continue;
       if (m.type === 0) {
         if (this.time >= m.expires) { m.hp = 0; continue; }
         const mine = this.minions.filter((o) => o.type === 1 && o.owner === m.owner && o.hp > 0).length;
@@ -717,12 +803,14 @@ export class Game {
       if (this.time < o.revealUntil) flags |= F_REVEALED;
       p.push([o.slot, r100(o.x), r100(o.y), Math.ceil(o.hp), this.maxHp(o), o.cans, r100(o.ammo), r100(o.superCharge), flags, r100(o.facing)]);
     }
-    const pr: ProjSnap[] = this.projectiles.map((q) => [q.id, q.look, r100(q.x), r100(q.y), r100(Math.atan2(q.dy, q.dx)), Math.round(q.speed * 10), q.owner]);
+    const pr: ProjSnap[] = this.projectiles.map((q) => [q.id, q.look, r100(q.x), r100(q.y), r100(Math.atan2(q.dy, q.dx)), Math.round(q.speed * 10), q.owner,
+      q.lob ? r100(Math.sin(Math.min(1, q.lob.t / q.lob.dur) * Math.PI) * 2.2) : 0]);
+    const ar: AreaSnap[] = this.areas.map((a) => [a.id, r100(a.x), r100(a.y), r100(a.r), a.owner]);
     const mn: MinionSnap[] = this.minions.map((m) => [m.id, m.type, r100(m.x), r100(m.y), Math.ceil(m.hp), m.maxHp, m.owner, r100(m.facing)]);
     const c: CanSnap[] = this.cans.map((k) => [k.id, r100(k.x), r100(k.y)]);
     return {
       t: this.tickNo, ack: viewer ? viewer.ack : 0, el: Math.round(this.time * 10), gas: r100(this.gasHalf()),
-      alive: this.aliveCount(), p, pr, mn, c, ev: events,
+      alive: this.aliveCount(), p, pr, mn, c, ar, ev: events,
     };
   }
 
