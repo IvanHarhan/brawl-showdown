@@ -401,6 +401,15 @@ def build_body(B, c):
         B.rod(0.03, (hx - 0.05, 0.0, hand_z - 0.02), (hx - 0.05, -0.38, hand_z - 0.02), '#3a3a3a', 'arm_R', seg=8)
         B.box((0.07, 0.16, 0.09), (hx - 0.02, 0.12, hand_z - 0.05), '#7a4a22', 'arm_R', rot=(0.2, 0, 0))
         B.box((0.08, 0.12, 0.05), (hx - 0.02, -0.2, hand_z - 0.06), '#7a4a22', 'arm_R')
+    elif weapon == 'megaphone':
+        # мегафон: раструб вперёд, ручка вниз
+        mz = hand_z + 0.02
+        res = B.rod(0.04, (hx, -0.02, mz), (hx, -0.12, mz), '#f2f2f2', 'arm_R', seg=10)
+        B.bm.verts.ensure_lookup_table()
+        cone = bmesh.ops.create_cone(B.bm, cap_ends=True, cap_tris=False, segments=12, radius1=0.045, radius2=0.12, depth=0.16,
+                                     matrix=Matrix.Translation((hx, -0.2, mz)) @ Euler((math.pi / 2, 0, 0)).to_matrix().to_4x4())
+        B._finish(cone['verts'], '#e53935', 'arm_R', True)
+        B.box((0.03, 0.04, 0.09), (hx, -0.05, mz - 0.07), '#222222', 'arm_R')
     elif weapon == 'bag':
         # пакет с бургерами в левой руке, стакан кофе в правой
         lx_ = sx

@@ -51,6 +51,7 @@ export class BotBrain {
   private aimError = (Math.random() - 0.5) * 0.1;
   private dodgeX = 0; private dodgeY = 0; private dodgeUntil = 0;
   private nextShotAt = 0;
+  private badBoxes = new Map<number, number>();
 
   constructor(private game: Game, private p: Player) {}
 
@@ -206,7 +207,7 @@ export class BotBrain {
     let bi = -1, bd = Infinity;
     for (const ti of g.boxHp.keys()) {
       const bx = (ti % g.map.w) + 0.5, by = Math.floor(ti / g.map.w) + 0.5;
-      if (g.inGas(bx, by, g.time + 6)) continue;
+      if (g.inGas(bx, by, g.time + 6) || (this.badBoxes.get(ti) ?? 0) > g.time) continue;
       const d = Math.hypot(bx - p.x, by - p.y);
       if (d < bd) { bd = d; bi = ti; }
     }
@@ -216,14 +217,22 @@ export class BotBrain {
     const lob = p.brawler.attack.kind === 'lob';
     const clear = lob || this.clearShot(p.x, p.y, bx, by, bi);
     if (bd <= want && clear) {
-      this.path = []; this.moveX = 0; this.moveY = 0;
+      // не стоим столбом: пока ждём патроны, ходим вбок вокруг ящика
+      this.path = [];
+      if (g.time > this.strafeUntil) { this.strafe = -this.strafe; this.strafeUntil = g.time + 0.5 + g.rand() * 0.7; }
+      const ux = (bx - p.x) / (bd || 1), uy = (by - p.y) / (bd || 1);
+      const back = bd < want * 0.6 ? -0.6 : 0;
+      this.moveX = -uy * this.strafe * 0.7 + ux * back;
+      this.moveY = ux * this.strafe * 0.7 + uy * back;
       const a = Math.atan2(by - p.y, bx - p.x);
       if (p.ammo >= 1) g.attack(p, a, bd);
     } else {
-      this.goTo((tx, ty) => {
+      const ok = this.goTo((tx, ty) => {
         const d = Math.hypot(tx + 0.5 - bx, ty + 0.5 - by);
         return d <= want && (lob || this.clearShot(tx + 0.5, ty + 0.5, bx, by, bi));
       });
+      // к ящику не подойти (за домом/водой) — забываем его на 15 с и берём другой
+      if (!ok) { this.badBoxes.set(bi, g.time + 15); return this.boxWork(range); }
     }
     return true;
   }

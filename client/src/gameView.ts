@@ -63,6 +63,12 @@ export class GameView {
   private canBorn = new Map<number, number>();
   private areaMeshes = new Map<number, THREE.Mesh>();
   private turn = new Map<number, number>();
+  zoomFar = (() => { try { return localStorage.getItem('brawl_zoom') !== 'near'; } catch { return true; } })();
+  private zoomK = 1;
+  toggleZoom(far = !this.zoomFar) {
+    this.zoomFar = far;
+    try { localStorage.setItem('brawl_zoom', far ? 'far' : 'near'); } catch { /* */ }
+  }
   private lastRender = { x: 0, y: 0, has: false };
   private seenPos = new Map<number, { x: number; y: number; until: number }>();
 
@@ -82,6 +88,7 @@ export class GameView {
 
     for (const r of this.world.roster) {
       const cv = new CharacterView(r.brawler, this.shadowMat);
+      cv.runScale = getBrawler(r.brawler).speed / 3.3;
       this.chars.set(r.slot, cv);
       this.scene.add(cv.root);
       cv.root.visible = false;
@@ -93,6 +100,7 @@ export class GameView {
       <div class="fade" id="fade"></div><div id="tags"></div><div id="dmgs"></div><div id="feed"></div>
       <div class="top"><span class="pill" id="aliveP">👤 10</span><span class="pill" id="gasP"></span></div>
       <div class="ping" id="ping"></div>
+      <button class="zoombtn" id="zoom" title="Приблизить / отдалить (колёсико)">🔍</button>
       <div class="zone" id="moveZone"></div>
       <div class="zone" id="supZone"><span>СУПЕР</span></div>
       <div class="zone" id="atkZone"></div>
@@ -103,6 +111,9 @@ export class GameView {
     this.tagLayer = this.hud.querySelector('#tags') as HTMLElement;
     this.dmgLayer = this.hud.querySelector('#dmgs') as HTMLElement;
     input.mount(this.hud);
+    this.hud.querySelector('#zoom')!.addEventListener('click', () => this.toggleZoom());
+    this.onWheel = (e: WheelEvent) => this.toggleZoom(e.deltaY > 0);
+    addEventListener('wheel', this.onWheel, { passive: true });
     input.enabled = true;
     audio.preloadVoice(this.world.me.id);
 
@@ -185,9 +196,10 @@ export class GameView {
     if (isSuper && b.super.kind !== 'burst' && b.super.kind !== 'lob') return;
     const look = a.kind === 'burst' || a.kind === 'spread' || a.kind === 'bouncer' || a.kind === 'lob' ? a.look : 'bullet';
     const fx = x + Math.cos(angle) * 0.55, fy = y + Math.sin(angle) * 0.55;
+    if (look === 'shout') { this.fx.ring(fx, fy, 1.2, 0xfff3b0, 0.3); this.audio.voice(b.id, 'attack', Math.max(0.35, vol), true); return; }
     if (look !== 'fist' && look !== 'sign' && look !== 'bottle' && look !== 'burger') { this.fx.flash(fx, 0.6, fy, 0xffe08a, 0.9, now); this.fx.smoke(fx, 0.6, fy, 1, 0.45, 0xffffff, 0.1, 0.5, 0.4); }
     else if (look === 'fist') this.fx.ring(fx, fy, 0.7, 0xffffff, 0.18);
-    const snd = look === 'pellet' || look === 'burger' ? 'shotgun' : look === 'fist' ? 'punch' : look === 'sign' || look === 'shuriken' || look === 'bottle' ? 'throw' : 'shot';
+    const snd = look === 'pellet' || look === 'burger' ? 'shotgun' : look === 'fist' ? 'punch' : look === 'laser' ? 'laser' : look === 'sign' || look === 'shuriken' || look === 'bottle' ? 'throw' : 'shot';
     this.audio.sfx(snd, vol);
   }
 
@@ -494,7 +506,9 @@ export class GameView {
     const fovV = (this.camera.fov * Math.PI) / 180;
     const tanV = Math.tan(fovV / 2);
     // горизонтальный экран: ~17 клеток в ширину, не меньше ~9.5 в высоту
-    const wantW = 22, wantH = 12.5;
+    // зум как в Доте: дальний общий план или ближний (кнопка 🔍 / колёсико)
+    this.zoomK += ((this.zoomFar ? 1 : 0.62) - this.zoomK) * Math.min(1, dt * 6);
+    const wantW = 22 * this.zoomK, wantH = 12.5 * this.zoomK;
     const intro = this.introAt ? Math.min(1, (performance.now() - this.introAt) / 1300) : 0;
     const ease = 1 - Math.pow(1 - intro, 3);
     const dist = Math.max(wantW / (2 * tanV * aspect), wantH / (2 * tanV)) * 0.95 * (1 + 1.6 * (1 - ease));
@@ -665,7 +679,7 @@ export class GameView {
         this.scene.add(m);
         this.areaMeshes.set(a.id, m);
         this.fx.burst(a.x, 0.3, a.y, 0x2f9e5b, 10, 3, 3);
-        this.audio.sfx('box', 0.5);
+        this.audio.sfx('glass', 0.7);
       }
       const pulse = 1 + Math.sin(now / 120 + a.id) * 0.04;
       m.position.set(a.x, 0.035, a.y);
@@ -789,7 +803,10 @@ export class GameView {
     return [A.mx, A.my];
   }
 
+  private onWheel: ((e: WheelEvent) => void) | null = null;
+
   dispose() {
+    if (this.onWheel) removeEventListener('wheel', this.onWheel);
     this.input.enabled = false;
     this.input.reset();
     this.hud.remove();

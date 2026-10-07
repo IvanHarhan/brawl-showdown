@@ -2,7 +2,7 @@
 // поменяй числа или kind атаки/супера — и боец поменяется без правок кода.
 // Единицы: расстояние в клетках, время в секундах, скорость в клетках/с.
 
-export type ProjectileLook = 'bullet' | 'pellet' | 'shuriken' | 'fist' | 'sign' | 'heavy' | 'burger' | 'bottle' | 'laser' | 'ball';
+export type ProjectileLook = 'bullet' | 'pellet' | 'shuriken' | 'fist' | 'sign' | 'heavy' | 'burger' | 'bottle' | 'laser' | 'ball' | 'shout';
 
 /** Очередь снарядов по прямой (Кольт, кулаки). */
 export interface BurstAttack {
@@ -142,9 +142,9 @@ export const BRAWLERS: Brawler[] = [
     super: { kind: 'burst', count: 12, interval: 0.08, damage: 320, range: 12, speed: 13, radius: 0.17, jitterDeg: 2, breaksWalls: true, look: 'heavy' },
   },
   {
-    id: 'mrp', name: 'Мистер Пи', color: '#e9e9e9',
+    id: 'mrp', name: 'Боб', color: '#e9e9e9',
     hp: 3200, speed: 2.65, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 2200,
-    attack: { kind: 'bouncer', damage: 760, range: 7.7, speed: 8, radius: 0.3, hopDistance: 2.5, splashRadius: 1.3, splashDamage: 600, look: 'sign' },
+    attack: { kind: 'bouncer', damage: 760, range: 7.7, speed: 9, radius: 0.42, hopDistance: 2.5, splashRadius: 1.3, splashDamage: 600, look: 'shout' },
     super: { kind: 'base', range: 6, hp: 2600, lifetime: 40, spawnEvery: 4, maxMinions: 2,
       minion: { hp: 1000, damage: 260, speed: 2.9, attackInterval: 0.8, sight: 9 } },
   },

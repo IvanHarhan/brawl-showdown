@@ -57,8 +57,9 @@ def generate():
         lines = json.load(f)
     model, _ = torch.hub.load('snakers4/silero-models', 'silero_tts', language='ru', speaker='v4_ru', trust_repo=True)
     tmp = tempfile.mkdtemp()
+    only = [a for a in sys.argv[1:] if not a.startswith('-')]
     for bid, spec in lines.items():
-        if bid.startswith('_'):
+        if bid.startswith('_') or (only and bid not in only):
             continue
         out = os.path.join(VOICE, bid)
         os.makedirs(out, exist_ok=True)

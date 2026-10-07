@@ -77,7 +77,8 @@
  "mrp": {
   "attack": [
    "attack1",
-   "attack2"
+   "attack2",
+   "attack3"
   ],
   "super": [
    "super1"
