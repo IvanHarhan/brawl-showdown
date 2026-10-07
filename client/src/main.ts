@@ -236,6 +236,8 @@ function enterRoom(room: Room) {
   room.onMessage('s', (s: Snapshot) => S.game?.onSnapshot(s));
   room.onMessage('end', (msg: EndMsg) => showResults(msg));
   room.onMessage('pong', (t: number) => { if (S.game) S.game.ping = performance.now() - t; });
+  // сервер сам меряет пинг: просто отражаем его метку
+  room.onMessage('sp', (t: number) => room.send('spr', t));
   let dropO: HTMLElement | null = null;
   room.onDrop(() => { dropO ??= overlay('<div class="spinner"></div><div>Связь потеряна. Переподключаемся…</div>'); });
   room.onReconnect(() => { dropO?.remove(); dropO = null; net.save(); });

@@ -5,6 +5,7 @@ import { BRAWLERS, getBrawler } from '../../../shared/brawlers';
 import { MAX_PLAYERS, RECONNECT_SECONDS, TICK_DT } from '../../../shared/constants';
 import type { InputItem, LobbyMsg, JoinOptions } from '../../../shared/protocol';
 import { MAP_PATH } from '../paths';
+import { log, liveRooms } from '../log';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const usedCodes = new Set<string>();
@@ -35,6 +36,12 @@ export class ShowdownRoom extends Room {
   game: Game | null = null;
   fast = false;
   private bySid = new Map<string, Player>();
+  // сетевая статистика: пинг, который меряет сервер, и то, что прислал клиент
+  private net = new Map<string, { name: string; rtt: number[]; cping: number; fps: number }>();
+  private tickMs: number[] = [];
+  private tickGap: number[] = [];
+  private lastTickAt = 0;
+  private createdAt = Date.now();
 
   onCreate(options: JoinOptions) {
     this.roomId = makeCode();
@@ -70,14 +77,28 @@ export class ShowdownRoom extends Room {
       if (p && this.game && !p.bot) { this.game.queueSuper(p, +msg?.a, +msg?.d); this.game.processNow(p); }
     });
     this.onMessage('ping', (client, t: number) => client.send('pong', t));
+    this.onMessage('spr', (client, t: number) => {
+      const n = this.net.get(client.sessionId);
+      if (n && Number.isFinite(t)) { n.rtt.push(Date.now() - t); if (n.rtt.length > 15) n.rtt.shift(); }
+    });
+    this.onMessage('cst', (client, s: { ping?: number; fps?: number }) => {
+      const n = this.net.get(client.sessionId);
+      if (n) { n.cping = Math.round(+(s?.ping ?? 0)); n.fps = Math.round(+(s?.fps ?? 0)); }
+    });
 
     this.setSimulationInterval(() => this.update(), TICK_DT * 1000);
+    this.clock.setInterval(() => { for (const c of this.clients) c.send('sp', Date.now()); }, 2000);
+    this.clock.setInterval(() => this.logStats(), 10000);
+    liveRooms.add(this);
+    log(`[${this.roomId}] создана${this.fast ? ' (fast)' : ''}`);
   }
 
   onJoin(client: Client, options: JoinOptions) {
     if (this.phase !== 'lobby') throw new Error('Игра уже идёт');
     this.members.push({ sid: client.sessionId, name: cleanName(options?.name), brawler: getBrawler(options?.brawler).id, connected: true, client });
     if (!this.host) this.host = client.sessionId;
+    this.net.set(client.sessionId, { name: cleanName(options?.name), rtt: [], cping: 0, fps: 0 });
+    log(`[${this.roomId}] вход ${cleanName(options?.name)} (${this.members.length} чел.)`);
     this.sendLobby();
   }
 
@@ -86,6 +107,7 @@ export class ShowdownRoom extends Room {
     if (m) { m.connected = false; m.client = null; }
     const p = this.bySid.get(client.sessionId);
     if (p) p.connected = false;
+    log(`[${this.roomId}] обрыв связи ${m?.name ?? client.sessionId}`);
     this.sendLobby();
     try {
       await this.allowReconnection(client, RECONNECT_SECONDS);
@@ -97,6 +119,7 @@ export class ShowdownRoom extends Room {
     if (m) { m.connected = true; m.client = client; }
     const p = this.bySid.get(client.sessionId);
     if (p) p.connected = true;
+    log(`[${this.roomId}] переподключился ${m?.name ?? client.sessionId}`);
     this.sendLobby();
     if (this.game && p && this.phase === 'playing') client.send('start', this.game.startMsg(p.slot));
     if (this.phase === 'ended' && this.game) client.send('end', { results: this.game.results() });
@@ -108,6 +131,8 @@ export class ShowdownRoom extends Room {
       p.connected = false;
       if (p.alive && this.phase === 'playing') this.game.makeBot(p);
     }
+    log(`[${this.roomId}] вышел ${this.member(client.sessionId)?.name ?? client.sessionId}`);
+    this.net.delete(client.sessionId);
     this.members = this.members.filter((m) => m.sid !== client.sessionId);
     if (this.host === client.sessionId) this.host = this.members.find((m) => m.connected)?.sid ?? this.members[0]?.sid ?? '';
     this.sendLobby();
@@ -115,6 +140,8 @@ export class ShowdownRoom extends Room {
 
   onDispose() {
     usedCodes.delete(this.roomId);
+    liveRooms.delete(this);
+    log(`[${this.roomId}] закрыта`);
   }
 
   private member(sid: string) { return this.members.find((m) => m.sid === sid); }
@@ -145,6 +172,7 @@ export class ShowdownRoom extends Room {
     }
     game.start();
     this.game = game;
+    log(`[${this.roomId}] старт: ${this.members.map((m) => m.name + '/' + m.brawler).join(', ')} + ${MAX_PLAYERS - this.members.length} ботов`);
     this.phase = 'playing';
     this.lock();
     this.sendLobby();
@@ -165,16 +193,44 @@ export class ShowdownRoom extends Room {
   private update() {
     const g = this.game;
     if (!g || this.phase !== 'playing') return;
+    const t0 = performance.now();
+    if (this.lastTickAt) { this.tickGap.push(t0 - this.lastTickAt); if (this.tickGap.length > 300) this.tickGap.shift(); }
+    this.lastTickAt = t0;
     g.tick(TICK_DT);
     const ev = g.takeEvents();
     for (const c of this.clients) {
       const p = this.bySid.get(c.sessionId) ?? null;
       c.send('s', g.snapshotFor(p, ev));
     }
+    this.tickMs.push(performance.now() - t0);
+    if (this.tickMs.length > 300) this.tickMs.shift();
     if (g.ended) {
       this.phase = 'ended';
-      this.broadcast('end', { results: g.results() });
+      const res = g.results();
+      log(`[${this.roomId}] конец, ${g.time.toFixed(0)} с, победил ${res[0]?.name} (${res[0]?.brawler})`);
+      this.broadcast('end', { results: res });
       this.sendLobby();
     }
+  }
+
+  stats() {
+    const avg = (a: number[]) => (a.length ? Math.round((a.reduce((s, x) => s + x, 0) / a.length) * 10) / 10 : 0);
+    const max = (a: number[]) => (a.length ? Math.round(Math.max(...a) * 10) / 10 : 0);
+    return {
+      code: this.roomId, phase: this.phase, ageSec: Math.round((Date.now() - this.createdAt) / 1000),
+      gameTime: this.game ? Math.round(this.game.time) : 0, alive: this.game?.aliveCount() ?? 0,
+      tick: { avgMs: avg(this.tickMs), maxMs: max(this.tickMs), gapAvg: avg(this.tickGap), gapMax: max(this.tickGap) },
+      players: [...this.net.entries()].map(([sid, n]) => ({
+        name: n.name, connected: this.member(sid)?.connected ?? false,
+        rttAvg: avg(n.rtt), rttMax: max(n.rtt), clientPing: n.cping, fps: n.fps,
+      })),
+    };
+  }
+
+  private logStats() {
+    if (!this.clients.length) return;
+    const s = this.stats();
+    const ps = s.players.map((p) => `${p.name}: ${p.rttAvg}/${p.rttMax} мс, у клиента ${p.clientPing} мс, ${p.fps} fps`).join('; ');
+    log(`[${this.roomId}] ${s.phase} t=${s.gameTime} живых ${s.alive} | тик ${s.tick.avgMs}/${s.tick.maxMs} мс, интервал ${s.tick.gapAvg}/${s.tick.gapMax} | ${ps}`);
   }
 }
