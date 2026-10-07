@@ -61,6 +61,7 @@ export class GameView {
   private reportFrames = 0;
   private superRing: THREE.Mesh | null = null;
   private canBorn = new Map<number, number>();
+  private areaMeshes = new Map<number, THREE.Mesh>();
   private lastRender = { x: 0, y: 0, has: false };
   private seenPos = new Map<number, { x: number; y: number; until: number }>();
 
@@ -139,7 +140,7 @@ export class GameView {
     const pos = w.myPos();
     let angle = screenAngle;
     let dist = 0;
-    const sKind = kind === 'super' ? superAimType(b.super) : 'line';
+    const sKind = kind === 'super' ? superAimType(b.super) : b.attack.kind === 'lob' ? 'point' : 'line';
     const range = kind === 'super' ? superRange(b.super) : b.attack.range;
     if (Number.isNaN(screenAngle)) {
       const m = this.mouseGround();
@@ -156,7 +157,7 @@ export class GameView {
     this.flushInputs();
     if (kind === 'attack') {
       if (me[6] < 100) { this.audio.sfx('click', 0.6); return; }
-      this.room.send('atk', { a: angle });
+      this.room.send('atk', sKind === 'point' ? { a: angle, d: dist } : { a: angle });
       this.localShotFx(angle, false);
     } else {
       if (me[7] < 100) return;
@@ -179,13 +180,13 @@ export class GameView {
   }
 
   private shotFx(x: number, y: number, angle: number, b: Brawler, isSuper: boolean, vol: number, now: number) {
-    const a = isSuper && b.super.kind === 'burst' ? b.super : b.attack;
-    const look = a.kind === 'burst' || a.kind === 'spread' || a.kind === 'bouncer' ? a.look : 'bullet';
-    if (isSuper && b.super.kind !== 'burst') return;
+    const a = isSuper && (b.super.kind === 'burst' || b.super.kind === 'lob') ? b.super : b.attack;
+    if (isSuper && b.super.kind !== 'burst' && b.super.kind !== 'lob') return;
+    const look = a.kind === 'burst' || a.kind === 'spread' || a.kind === 'bouncer' || a.kind === 'lob' ? a.look : 'bullet';
     const fx = x + Math.cos(angle) * 0.55, fy = y + Math.sin(angle) * 0.55;
-    if (look !== 'fist' && look !== 'sign') { this.fx.flash(fx, 0.6, fy, 0xffe08a, 0.9, now); this.fx.smoke(fx, 0.6, fy, 1, 0.45, 0xffffff, 0.1, 0.5, 0.4); }
+    if (look !== 'fist' && look !== 'sign' && look !== 'bottle' && look !== 'burger') { this.fx.flash(fx, 0.6, fy, 0xffe08a, 0.9, now); this.fx.smoke(fx, 0.6, fy, 1, 0.45, 0xffffff, 0.1, 0.5, 0.4); }
     else if (look === 'fist') this.fx.ring(fx, fy, 0.7, 0xffffff, 0.18);
-    const snd = look === 'pellet' ? 'shotgun' : look === 'fist' ? 'punch' : look === 'sign' || look === 'shuriken' ? 'throw' : 'shot';
+    const snd = look === 'pellet' || look === 'burger' ? 'shotgun' : look === 'fist' ? 'punch' : look === 'sign' || look === 'shuriken' || look === 'bottle' ? 'throw' : 'shot';
     this.audio.sfx(snd, vol);
   }
 
@@ -427,6 +428,7 @@ export class GameView {
     this.proj.sync(w.projectiles(now), now);
     this.updateMinions(now);
     this.updateCans(now);
+    this.updateAreas(now);
     const gasHalf = w.gas(now);
     this.gas.update(gasHalf, now);
     // клубы газа вдоль границы рядом с камерой
@@ -567,7 +569,19 @@ export class GameView {
     for (const m of list) {
       seen.add(m.id);
       let o = this.minionMeshes.get(m.id);
-      if (!o) { o = makeMinionMesh(m.type); this.minionMeshes.set(m.id, o); this.scene.add(o); }
+      if (!o) {
+        o = makeMinionMesh(m.type);
+        if (m.type === 2) {
+          // зона действия турели
+          const owner = this.world.rosterOf(m.owner);
+          const s = owner ? getBrawler(owner.brawler).super : null;
+          const r = s && s.kind === 'booster' ? s.radius : 5;
+          const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.08, r, 64), new THREE.MeshBasicMaterial({ color: 0xff4fd8, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }));
+          ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+          o.add(ring);
+        }
+        this.minionMeshes.set(m.id, o); this.scene.add(o);
+      }
       o.position.set(m.x, m.type === 1 ? Math.abs(Math.sin(now / 90)) * 0.08 : 0, m.y);
       o.rotation.y = Math.PI / 2 - m.facing;
       let t = this.minionTags.get(m.id);
@@ -628,6 +642,27 @@ export class GameView {
     }
   }
 
+  private updateAreas(now: number) {
+    const seen = new Set<number>();
+    for (const a of this.world.areas()) {
+      seen.add(a.id);
+      let m = this.areaMeshes.get(a.id);
+      if (!m) {
+        m = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({ color: a.owner === this.world.you ? 0x4fd17a : 0x7fd34f, transparent: true, opacity: 0.55, depthWrite: false }));
+        m.rotation.x = -Math.PI / 2;
+        this.scene.add(m);
+        this.areaMeshes.set(a.id, m);
+        this.fx.burst(a.x, 0.3, a.y, 0x2f9e5b, 10, 3, 3);
+        this.audio.sfx('box', 0.5);
+      }
+      const pulse = 1 + Math.sin(now / 120 + a.id) * 0.04;
+      m.position.set(a.x, 0.035, a.y);
+      m.scale.setScalar(a.r * pulse);
+      if (Math.random() < 0.08) this.fx.smoke(a.x + (Math.random() - 0.5) * a.r, 0.15, a.y + (Math.random() - 0.5) * a.r, 1, 0.4, 0x9dff9d, 0.1, 0.5, 0.5);
+    }
+    for (const [id, m] of this.areaMeshes) if (!seen.has(id)) { m.removeFromParent(); this.areaMeshes.delete(id); }
+  }
+
   private updateCans(now: number) {
     const seen = new Set<number>();
     for (const [id, x100, y100] of this.world.cans(now)) {
@@ -656,13 +691,14 @@ export class GameView {
       if (m) {
         kind = this.input.keys.has('ShiftLeft') ? 'super' : 'attack';
         angle = Math.atan2(m.y - pos.y, m.x - pos.x);
-        mag = Math.min(1, Math.hypot(m.x - pos.x, m.y - pos.y) / Math.max(1, superRange(b.super)));
+        mag = Math.min(1, Math.hypot(m.x - pos.x, m.y - pos.y) / Math.max(1, kind === 'super' ? superRange(b.super) : b.attack.range));
       }
     }
     if (!kind || !w.alive) { this.aimView.hide(); return; }
     if (kind === 'attack') {
       const at = b.attack;
       if (at.kind === 'spread') this.aimView.show('spread', pos.x, pos.y, angle, at.range, 0, at.spreadDeg, 0, false);
+      else if (at.kind === 'lob') this.aimView.show('point', pos.x, pos.y, angle, at.range, at.radius, 0, Math.min(1, mag) * at.range, false);
       else this.aimView.show('line', pos.x, pos.y, angle, at.range, at.kind === 'burst' && at.range < 3 ? 0.9 : 0.35, 0, 0, false);
     } else {
       const s = b.super;
@@ -719,7 +755,7 @@ export class GameView {
     const losTo = target && lineOfFire(w.map, pos.x, pos.y, target.x - (target.x - pos.x) / (td || 1) * 0.7, target.y - (target.y - pos.y) / (td || 1) * 0.7);
     if (target && td <= b.attack.range * 0.9 && me && me[6] >= 100 && losTo) {
       const a = Math.atan2(target.y - pos.y, target.x - pos.x);
-      this.room.send('atk', { a });
+      this.room.send('atk', { a, d: td });
       this.localShotFx(a, false);
       if (me[7] >= 100) { this.room.send('sup', { a, d: td }); this.localShotFx(a, true); }
     }

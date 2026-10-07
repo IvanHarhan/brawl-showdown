@@ -1,10 +1,10 @@
 // Формат сообщений клиент <-> сервер. Числа координат передаются ×100 (целые).
 
-export const LOOKS = ['bullet', 'pellet', 'shuriken', 'fist', 'sign', 'heavy'] as const;
+export const LOOKS = ['bullet', 'pellet', 'shuriken', 'fist', 'sign', 'heavy', 'burger', 'bottle', 'laser', 'ball'] as const;
 
 /** Клиент -> сервер */
 export type InputItem = [seq: number, mx: number, my: number, dt: number];
-export interface AttackMsg { a: number }            // угол (рад)
+export interface AttackMsg { a: number; d?: number } // угол (рад) и дистанция до точки (для бросков)
 export interface SuperMsg { a: number; d: number }  // угол и дистанция до точки
 export interface JoinOptions { name: string; brawler: string; fast?: boolean; dev?: string }
 
@@ -13,9 +13,11 @@ export const F_ALIVE = 1, F_BUSH = 2, F_INVIS = 4, F_LOCKED = 8, F_AIR = 16, F_S
 
 /** [slot, x, y, hp, maxHp, cans, ammo×100, super×100, flags, facing×100] */
 export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number];
-/** [id, lookIndex, x, y, angle×100, speed×10, ownerSlot] */
-export type ProjSnap = [number, number, number, number, number, number, number];
-/** [id, type(0 база, 1 помощник), x, y, hp, maxHp, ownerSlot, facing×100] */
+/** [id, lookIndex, x, y, angle×100, speed×10, ownerSlot, высота дуги×100 (у брошенных бутылок, иначе 0)] */
+export type ProjSnap = [number, number, number, number, number, number, number, number];
+/** Лужа на земле: [id, x, y, radius×100, ownerSlot] */
+export type AreaSnap = [number, number, number, number, number];
+/** [id, type(0 база, 1 помощник, 2 турель-усилитель), x, y, hp, maxHp, ownerSlot, facing×100] */
 export type MinionSnap = [number, number, number, number, number, number, number, number];
 /** [id, x, y] */
 export type CanSnap = [number, number, number];
@@ -42,6 +44,7 @@ export interface Snapshot {
   pr: ProjSnap[];
   mn: MinionSnap[];
   c: CanSnap[];
+  ar: AreaSnap[];
   ev: GameEvent[];
 }
 

@@ -37,17 +37,17 @@ function run(g: Game, seconds: number) {
 
 describe('урон', () => {
   it('очередь Дрипа наносит урон по прямой', () => {
-    const { g, ps: [a, b, c] } = setup(['drip', 'bubu', 'bubu']);
+    const { g, ps: [a, b, c] } = setup(['drip', 'shop', 'shop']);
     place(a, 2, 1); place(b, 7, 1); place(c, 20, 11);
     expect(g.attack(a, 0)).toBe(true);
     run(g, 1);
     const atk = getBrawler('drip').attack as BurstAttack;
-    expect(b.hp).toBe(getBrawler('bubu').hp - atk.count * atk.damage);
+    expect(b.hp).toBe(getBrawler('shop').hp - atk.count * atk.damage);
     expect(a.ammo).toBeLessThan(3);
   });
 
   it('стена блокирует пули, а вода — нет', () => {
-    const { g, ps: [a, b, c] } = setup(['drip', 'bubu', 'bubu']);
+    const { g, ps: [a, b, c] } = setup(['drip', 'shop', 'shop']);
     place(a, 9, 5.5); place(b, 15, 5.5); place(c, 1, 11);
     g.attack(a, 0);
     run(g, 1);
@@ -62,10 +62,10 @@ describe('урон', () => {
   });
 
   it('дробовик бьёт сильнее вблизи', () => {
-    const near = setup(['bubu', 'iceberg', 'leon']);
+    const near = setup(['shop', 'iceberg', 'leon']);
     place(near.ps[0], 2, 1); place(near.ps[1], 3.2, 1); place(near.ps[2], 20, 11);
     near.g.attack(near.ps[0], 0); run(near.g, 0.5);
-    const far = setup(['bubu', 'iceberg', 'leon']);
+    const far = setup(['shop', 'iceberg', 'leon']);
     place(far.ps[0], 2, 1); place(far.ps[1], 6.2, 1); place(far.ps[2], 20, 11);
     far.g.attack(far.ps[0], 0); run(far.g, 0.5);
     const dNear = near.ps[1].brawler.hp - near.ps[1].hp, dFar = far.ps[1].brawler.hp - far.ps[1].hp;
@@ -75,7 +75,7 @@ describe('урон', () => {
   });
 
   it('регенерация после 3 секунд без боя', () => {
-    const { g, ps: [a, b] } = setup(['drip', 'bubu']);
+    const { g, ps: [a, b] } = setup(['drip', 'shop']);
     place(a, 2, 11); place(b, 22, 11);
     b.hp = 1000; b.lastCombat = g.time;
     run(g, REGEN_DELAY - 0.2);
@@ -128,7 +128,7 @@ describe('ящики и банки', () => {
 
 describe('газ', () => {
   it('сужается после старта и бьёт каждую секунду', () => {
-    const { g, ps: [a, b] } = setup(['bubu', 'bubu'], { gasStart: 1, gasDuration: 10 });
+    const { g, ps: [a, b] } = setup(['shop', 'shop'], { gasStart: 1, gasDuration: 10 });
     place(a, 0.5, 0.5); place(b, 12, 6);
     const full = g.gasHalf();
     run(g, 1);
@@ -163,7 +163,7 @@ describe('победа', () => {
 
 describe('суперы', () => {
   it('Дрип: длинная очередь ломает стены', () => {
-    const { g, ps: [a, b] } = setup(['drip', 'bubu']);
+    const { g, ps: [a, b] } = setup(['drip', 'shop']);
     place(a, 9, 4.5); place(b, 15, 4.5);
     a.superCharge = 1;
     expect(g.superAttack(a, 0, 10)).toBe(true);
@@ -193,8 +193,8 @@ describe('суперы', () => {
     expect(b.hp).toBeLessThan(b.brawler.hp);
   });
 
-  it('Бу-бу: рывок сносит стены и бьёт врага', () => {
-    const { g, ps: [a, b] } = setup(['bubu', 'drip']);
+  it('Шоп: рывок сносит стены и бьёт врага', () => {
+    const { g, ps: [a, b] } = setup(['shop', 'drip']);
     place(a, 10, 3.5); place(b, 14.5, 3.5);
     a.superCharge = 1;
     g.superAttack(a, 0, 8);
@@ -242,6 +242,41 @@ describe('суперы', () => {
   });
 });
 
+describe('новые бойцы', () => {
+  it('Хуссейн: бутылка летит через стену, лужа бьёт несколько раз', () => {
+    const { g, ps: [a, b] } = setup(['hussein', 'drip']);
+    place(a, 9, 4.5); place(b, 15, 4.5);
+    g.attack(a, 0, 6);
+    run(g, 0.7);
+    expect(g.areas.length).toBe(1);
+    const hp1 = b.hp;
+    run(g, 1.2);
+    expect(b.brawler.hp - b.hp).toBeGreaterThan(0);
+    expect(hp1 - b.hp).toBeGreaterThan(0);
+    expect(tileAt(g.map, 12, 4)).toBe(Tile.Wall);
+  });
+
+  it('Гамас: мяч отскакивает от стены и попадает', () => {
+    const { g, ps: [a, b] } = setup(['gamas', 'drip']);
+    // стреляем в стену (x=12) под углом, мяч отражается вниз-влево к цели
+    place(a, 9, 3.5); place(b, 9.5, 7.5);
+    g.attack(a, Math.atan2(2, 2.5), 99);
+    run(g, 1.5);
+    expect(b.hp).toBeLessThan(b.brawler.hp);
+  });
+
+  it('8-Бит: турель усиливает урон рядом и не действует далеко', () => {
+    const { g, ps: [a] } = setup(['bit8', 'drip']);
+    place(a, 3, 10);
+    const base = g.dmgMult(a);
+    a.superCharge = 1;
+    g.superAttack(a, 0, 0);
+    expect(g.minions.some((m) => m.type === 2)).toBe(true);
+    expect(g.dmgMult(a)).toBeCloseTo(base * 1.6);
+    place(a, 20, 10);
+    expect(g.dmgMult(a)).toBeCloseTo(base);
+  });
+});
 describe('карта', () => {
   it('showdown1.txt: 60x60, 10 спавнов, ящики есть', () => {
     const m = parseMap(readFileSync(new URL('../../maps/showdown1.txt', import.meta.url), 'utf8'));
@@ -252,7 +287,7 @@ describe('карта', () => {
   });
 
   it('все бойцы описаны полностью', () => {
-    expect(BRAWLERS.length).toBe(6);
+    expect(BRAWLERS.length).toBe(9);
     for (const b of BRAWLERS) {
       expect(b.hp).toBeGreaterThan(0);
       expect(b.attack.range).toBeGreaterThan(0);
@@ -265,7 +300,7 @@ describe('бой ботов', () => {
   it('10 ботов доигрывают до победителя', () => {
     const text = readFileSync(new URL('../../maps/showdown1.txt', import.meta.url), 'utf8');
     const g = new Game(text, { seed: 3 });
-    for (let i = 0; i < 10; i++) g.addPlayer('b' + i, BRAWLERS[i % 6].id, true);
+    for (let i = 0; i < 10; i++) g.addPlayer('b' + i, BRAWLERS[i % BRAWLERS.length].id, true);
     g.start();
     while (!g.ended && g.time < 400) g.tick();
     expect(g.ended).toBe(true);

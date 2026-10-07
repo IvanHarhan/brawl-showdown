@@ -111,6 +111,38 @@ export class ProjectileViews {
         s.name = 'spin';
         g.add(s);
       }
+      else if (look === 'burger') {
+        // бургер: булка, котлета, сыр
+        const s = new THREE.Group();
+        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial({ color: 0xe0a14a }));
+        bun.position.y = 0.03;
+        const patty = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 12), toonMaterial({ color: 0x5a3018 }));
+        const cheese = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.015, 0.26), toonMaterial({ color: 0xffc928 }));
+        cheese.position.y = 0.035; cheese.rotation.y = 0.6;
+        const bottom = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.15, 0.05, 12), toonMaterial({ color: 0xd99440 }));
+        bottom.position.y = -0.05;
+        addOutline(bun); addOutline(bottom);
+        s.add(bun, patty, cheese, bottom);
+        s.name = 'tumble';
+        g.add(s, trail(0xffd28a, 0.5, 0.12));
+      } else if (look === 'bottle') {
+        const s = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.26, 10), toonMaterial({ color: 0x2f9e5b, transparent: true, opacity: 0.9 }));
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.06, 0.12, 8), toonMaterial({ color: 0x2f9e5b }));
+        neck.position.y = 0.18;
+        const label = new THREE.Mesh(new THREE.CylinderGeometry(0.093, 0.093, 0.1, 10), toonMaterial({ color: 0xf2e6c8 }));
+        addOutline(body);
+        s.add(body, neck, label);
+        s.name = 'tumble';
+        g.add(s);
+      } else if (look === 'laser') {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.5), new THREE.MeshBasicMaterial({ color: 0xff4fd8 }));
+        g.add(b, trail(0xff8af0, 0.9, 0.12), glow(0xff4fd8, 0.55));
+      } else if (look === 'ball') {
+        const b = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), toonMaterial({ color: 0xffd23f, emissive: 0x6a4a00 }));
+        addOutline(b);
+        g.add(b, trail(0xfff0a0, 0.6, 0.12));
+      }
       g.position.y = 0.55;
       this.protos.push(g);
     }
@@ -125,7 +157,7 @@ export class ProjectileViews {
   }
 
   /** list: [id, look, x, y, angle] уже интерполированные. */
-  sync(list: { id: number; look: number; x: number; y: number; a: number }[], now: number) {
+  sync(list: { id: number; look: number; x: number; y: number; a: number; h?: number }[], now: number) {
     this.seen.clear();
     for (const p of list) {
       this.seen.add(p.id);
@@ -133,6 +165,9 @@ export class ProjectileViews {
       if (!e) { e = { obj: this.take(p.look), look: p.look }; this.active.set(p.id, e); }
       e.obj.position.x = p.x;
       e.obj.position.z = p.y;
+      e.obj.position.y = 0.55 + (p.h ?? 0);
+      const tumble = e.obj.getObjectByName('tumble');
+      if (tumble) { tumble.rotation.x = now / 90; tumble.rotation.z = now / 140; }
       e.obj.rotation.y = Math.PI / 2 - p.a;
       const spin = e.obj.getObjectByName('spin');
       if (spin) spin.rotation.y = now / 60;
@@ -441,6 +476,16 @@ export function makeBlobShadowMat() {
 /** Помощник Мистера Пи и его база. */
 export function makeMinionMesh(type: number) {
   const g = new THREE.Group();
+  if (type === 2) {
+    // турель-усилитель 8-Бита: игровой автомат с экраном
+    const cab = new THREE.Mesh(paint(new THREE.BoxGeometry(0.6, 0.9, 0.5).translate(0, 0.45, 0), '#5b2a9e'), toonMaterial({ vertexColors: true }));
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.3), new THREE.MeshBasicMaterial({ color: 0x5cf2ff }));
+    screen.position.set(0, 0.68, 0.26);
+    const top = new THREE.Mesh(paint(new THREE.BoxGeometry(0.64, 0.12, 0.54).translate(0, 0.95, 0), '#ff4fd8'), toonMaterial({ vertexColors: true }));
+    addOutline(cab); addOutline(top);
+    g.add(cab, screen, top);
+    return g;
+  }
   if (type === 0) {
     const base = new THREE.Mesh(paint(new THREE.CylinderGeometry(0.45, 0.5, 0.5, 8).translate(0, 0.25, 0), '#e9e9e9'), toonMaterial({ vertexColors: true }));
     const roof = new THREE.Mesh(paint(new THREE.ConeGeometry(0.55, 0.45, 8).translate(0, 0.72, 0), '#111111'), toonMaterial({ vertexColors: true }));

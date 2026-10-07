@@ -144,9 +144,9 @@ def mix_hex(a, b, k):
 def build_body(B, c):
     H = c.get('height', 1.0)
     build = c.get('build', 'normal')
-    tr = {'slim': 0.155, 'normal': 0.175, 'big': 0.22}[build]
-    ar = {'slim': 0.05, 'normal': 0.056, 'big': 0.07}[build]
-    lr = {'slim': 0.062, 'normal': 0.068, 'big': 0.082}[build]
+    tr = {'slim': 0.155, 'normal': 0.175, 'big': 0.22, 'huge': 0.27}[build]
+    ar = {'slim': 0.05, 'normal': 0.056, 'big': 0.07, 'huge': 0.1}[build]
+    lr = {'slim': 0.062, 'normal': 0.068, 'big': 0.082, 'huge': 0.09}[build]
     skin = c['skin']
     top, bottom, shoes, hair = c['top'], c['bottom'], c['shoes'], c['hair']
     z = lambda v: v * H
@@ -181,6 +181,17 @@ def build_body(B, c):
         if bt == 'shorts':
             B.cyl(lr * 0.75, lr * 0.75, foot, z(0.3), (x, 0), skin, bone, seg=8)
             B.cyl(lr * 1.35, lr * 1.2, z(0.27), leg_top, (x, 0), bottom['color'], bone)
+        elif bt == 'joggers':
+            # широкие спортивки с резинкой у щиколотки
+            B.cyl(lr * 1.15, lr * 1.5, foot + 0.07, leg_top, (x, 0), bottom['color'], bone)
+            B.cyl(lr * 0.95, lr * 1.0, foot + (0.1 if shoes['type'] == 'boots' else 0.02), foot + 0.08, (x, 0), bottom.get('cuff', bottom['color']), bone)
+            if bottom.get('pattern') == 'dogs':
+                # принт с собаками: маленькие пятна-мордочки
+                for i, (zz, ang) in enumerate(((0.16, 0.3), (0.24, 2.0), (0.31, -1.2), (0.38, 1.0), (0.2, -2.4), (0.34, 3.0))):
+                    rr = lr * (1.2 + (zz - 0.1) * 0.9)
+                    px, py = x + math.cos(ang) * rr, math.sin(ang) * rr
+                    B.box((0.04, 0.014, 0.04), (px, py, z(zz)), '#a5683a', bone, rot=(0, 0, ang))
+                    B.box((0.02, 0.016, 0.018), (px, py, z(zz) - 0.012), '#f2efe6', bone, rot=(0, 0, ang))
         elif bt == 'flare':
             B.cyl(lr * 1.75, lr * 1.0, foot - 0.02, z(0.3), (x, 0), bottom['color'], bone)
             B.cyl(lr * 1.0, lr * 1.1, z(0.3), leg_top, (x, 0), bottom['color'], bone)
@@ -257,6 +268,39 @@ def build_body(B, c):
         B.box((0.06, 0.01, 0.06), (0.08, -tr * 0.78, t1 - 0.1), trim or '#fff', 'chest')
     if tt == 'hoodie' and hair['style'] != 'hood':
         B.torus(0.11, 0.04, (0, 0.06, t1 + 0.02), top['color'], 'chest', rot=(1.2, 0, 0), seg=10, tseg=4)
+    if tt == 'anorak':
+        # анорак: капюшон сзади, большой карман-кенгуру, белая плашка и нашивка-флаг (без надписей)
+        B.torus(0.125, 0.045, (0, 0.07, t1 + 0.02), top['color'], 'chest', rot=(1.2, 0, 0), seg=10, tseg=4)
+        B.box((0.25, 0.025, 0.12), (0, -tr * 0.8, z(0.6)), mix_hex(top['color'], '#000000', 0.35), 'chest')
+        B.box((0.012, 0.01, 0.12), (0, -tr * 0.79, t1 - 0.07), '#bfbfbf', 'chest')
+        B.box((0.14, 0.012, 0.042), (0, -tr * 0.8 - 0.01, z(0.695)), '#f2f2f2', 'chest')
+        B.box((0.115, 0.014, 0.016), (0, -tr * 0.8 - 0.014, z(0.695)), '#1a1a1a', 'chest')
+        fz = z(0.635)
+        B.box((0.06, 0.012, 0.04), (0, -tr * 0.8 - 0.012, fz), '#c8102e', 'chest')
+        B.box((0.06, 0.014, 0.01), (0, -tr * 0.8 - 0.015, fz), '#ffffff', 'chest')
+        B.box((0.01, 0.014, 0.04), (-0.008, -tr * 0.8 - 0.015, fz), '#ffffff', 'chest')
+        B.box((0.06, 0.016, 0.005), (0, -tr * 0.8 - 0.017, fz), '#0b2a6f', 'chest')
+        B.box((0.005, 0.016, 0.04), (-0.008, -tr * 0.8 - 0.017, fz), '#0b2a6f', 'chest')
+    if c.get('emblem') == 'label':
+        # белая «этикетка» на чёрной футболке: рамка и строки-полоски, без текста
+        ly = -tr * 0.78 - 0.008
+        for (w_, h_, zz) in ((0.2, 0.012, z(0.76)), (0.2, 0.012, z(0.56)), ):
+            B.box((w_, 0.008, h_), (0, ly, zz), '#f2f2f2', 'chest')
+        for sx_ in (-0.1, 0.1):
+            B.box((0.012, 0.008, 0.2), (sx_, ly, z(0.66)), '#f2f2f2', 'chest')
+        for zz, w_ in ((0.73, 0.15), (0.7, 0.08), (0.66, 0.12), (0.62, 0.15), (0.59, 0.1)):
+            B.box((w_, 0.009, 0.012), (0, ly - 0.001, z(zz)), '#f2f2f2', 'chest')
+    if c.get('emblem') == 'heart':
+        # сердце в цветах флагов: левая половина сине-жёлтая, правая бело-красная
+        hy = -tr * 0.78 - 0.01
+        hz_ = z(0.7)
+        B.sphere(0.045, (0.04, hy, hz_), '#2f6fd6', 'chest', scale=(1, 0.3, 1), seg=8, rings=5)
+        B.sphere(0.045, (-0.04, hy, hz_), '#f2f2f2', 'chest', scale=(1, 0.3, 1), seg=8, rings=5)
+        B.tri(0.06, (0.03, hy, hz_ - 0.045), -math.pi / 2, '#ffd23f', 'chest', thick=0.012)
+        B.tri(0.06, (-0.03, hy, hz_ - 0.045), -math.pi / 2, '#e53935', 'chest', thick=0.012)
+    if c.get('emblem') == 'laurel':
+        # маленький белый венок на груди
+        B.torus(0.022, 0.005, (-0.07, -tr * 0.78 - 0.006, z(0.74)), '#f2f2f2', 'chest', rot=(math.pi / 2, 0, 0), seg=10, tseg=3)
     if tt == 'hoodie':
         # карман-кенгуру
         B.box((0.2, 0.02, 0.07), (0, -tr * 0.78, z(0.58)), mix_hex(top['color'], '#000000', 0.25), 'chest')
@@ -315,6 +359,17 @@ def build_body(B, c):
             if tt == 'tracksuit':
                 B.box((0.012, 0.016, sh - hand_z - 0.04), (x + side * ar, 0, (sh + hand_z) / 2 + 0.02), top.get('stripe', '#fff'), bone)
         B.sphere(ar * 1.15, (x, 0, sh), sleeve if tt != 'sweater' else top['color'], bone, seg=8, rings=5)
+        if build == 'huge':
+            # качок: огромные дельты и бицепс, мощное предплечье
+            B.sphere(ar * 1.75, (x + side * 0.02, 0, sh - 0.02), sleeve, bone, scale=(1, 1, 0.9), seg=8, rings=6)
+            arm_skin = tt in ('tee', 'checker')
+            B.sphere(ar * 1.35, (x, -0.01, (sh + hand_z) / 2 + 0.02), skin if arm_skin else sleeve, bone, scale=(1, 1, 1.3), seg=8, rings=5)
+            B.sphere(ar * 1.1, (x, 0, hand_z + 0.09), skin if arm_skin else sleeve, bone, scale=(1, 1, 1.4), seg=8, rings=5)
+        if top.get('badge') and side == 1:
+            # нашивка на левом рукаве (компас-патч, без логотипа)
+            B.box((0.012, 0.06, 0.06), (x + ar * 1.05, 0, sh - 0.12), '#141414', bone)
+            B.box((0.014, 0.04, 0.04), (x + ar * 1.06, 0, sh - 0.12), '#f2c94c', bone)
+            B.box((0.016, 0.02, 0.02), (x + ar * 1.07, 0, sh - 0.12), '#2f9e5b', bone)
         hr = ar * 1.25
         hcol = skin
         if weapon == 'fists':
@@ -346,6 +401,29 @@ def build_body(B, c):
         B.rod(0.03, (hx - 0.05, 0.0, hand_z - 0.02), (hx - 0.05, -0.38, hand_z - 0.02), '#3a3a3a', 'arm_R', seg=8)
         B.box((0.07, 0.16, 0.09), (hx - 0.02, 0.12, hand_z - 0.05), '#7a4a22', 'arm_R', rot=(0.2, 0, 0))
         B.box((0.08, 0.12, 0.05), (hx - 0.02, -0.2, hand_z - 0.06), '#7a4a22', 'arm_R')
+    elif weapon == 'bag':
+        # пакет с бургерами в левой руке, стакан кофе в правой
+        lx_ = sx
+        B.box((0.16, 0.11, 0.2), (lx_ + 0.02, -0.02, hand_z - 0.13), '#c89b62', 'arm_L')
+        B.box((0.165, 0.115, 0.03), (lx_ + 0.02, -0.02, hand_z - 0.02), '#a97d48', 'arm_L')
+        B.box((0.05, 0.118, 0.05), (lx_ + 0.02, -0.02, hand_z - 0.12), '#d32f2f', 'arm_L')
+        B.cyl(0.035, 0.045, hand_z - 0.1, hand_z + 0.04, (hx, -0.04), '#f5f0e6', 'arm_R', seg=8)
+        B.cyl(0.047, 0.047, hand_z + 0.03, hand_z + 0.05, (hx, -0.04), '#4a2c1a', 'arm_R', seg=8)
+    elif weapon == 'bottle':
+        B.cyl(0.04, 0.04, hand_z - 0.12, hand_z + 0.06, (hx, -0.05), '#2f9e5b', 'arm_R', seg=8)
+        B.cyl(0.015, 0.03, hand_z + 0.06, hand_z + 0.13, (hx, -0.05), '#2f9e5b', 'arm_R', seg=6)
+        B.cyl(0.042, 0.042, hand_z - 0.07, hand_z - 0.01, (hx, -0.05), '#f2e6c8', 'arm_R', seg=8)
+    elif weapon == 'blaster':
+        # игрушечный бластер для мячей-рикошетов
+        B.box((0.06, 0.2, 0.08), (hx, -0.09, hand_z - 0.03), '#f2c94c', 'arm_R')
+        B.rod(0.03, (hx, -0.18, hand_z - 0.02), (hx, -0.26, hand_z - 0.02), '#1a1a1a', 'arm_R', seg=8)
+        B.box((0.045, 0.05, 0.09), (hx, 0.0, hand_z - 0.08), '#1a1a1a', 'arm_R', rot=(-0.3, 0, 0))
+    elif weapon == 'arcade':
+        # ретро-пушка 8-Бита: корпус с пикселями
+        B.box((0.1, 0.26, 0.11), (hx, -0.1, hand_z - 0.02), '#5b2a9e', 'arm_R')
+        B.box((0.104, 0.06, 0.04), (hx, -0.04, hand_z + 0.025), '#5cf2ff', 'arm_R')
+        B.box((0.104, 0.04, 0.03), (hx, -0.16, hand_z + 0.025), '#ff4fd8', 'arm_R')
+        B.rod(0.04, (hx, -0.23, hand_z - 0.02), (hx, -0.3, hand_z - 0.02), '#2a2a2a', 'arm_R', seg=8)
     elif weapon == 'shuriken':
         for a in (0, math.pi / 4):
             B.cyl(0.09, 0.09, hand_z - 0.005, hand_z + 0.005, (hx, -0.08), '#9fa6ad', 'arm_R', seg=4, cap=True)
@@ -397,7 +475,7 @@ def build_body(B, c):
             # тейпер-фейд: виски почти под кожу, сверху короткий объём
             B.sphere(head_r * 0.8, (0, -0.015, hz + 0.135), hair['color'], 'head', scale=(1.0, 1.02, 0.5), seg=12, rings=7)
         if st == 'curly':
-            n = 26
+            n = hair.get('count', 26)
             ga = math.pi * (3 - math.sqrt(5))
             for i in range(n):
                 yy = 1 - (i / (n - 1)) * 1.3
@@ -417,6 +495,14 @@ def build_body(B, c):
         B.ico(0.022, (-head_r * 1.0, -0.01, hz - 0.08), '#ffd54a', 'head', sub=1)
 
     # --- цепь
+    if 'trident' in c.get('accessories', []):
+        # цепочка с маленьким трезубцем
+        B.torus(0.11 if build != 'huge' else 0.15, 0.008, (0, -0.05, z(0.8)), '#d9b13b', 'chest', rot=(0.6, 0, 0), seg=16, tseg=3)
+        py_ = -tr * 0.8 - 0.012
+        B.box((0.008, 0.008, 0.045), (0, py_, z(0.7)), '#d9b13b', 'chest')
+        for sx_ in (-0.015, 0.015):
+            B.box((0.006, 0.008, 0.03), (sx_, py_, z(0.705)), '#d9b13b', 'chest')
+        B.box((0.036, 0.008, 0.006), (0, py_, z(0.69)), '#d9b13b', 'chest')
     if 'chain' in c.get('accessories', []):
         B.torus(0.12 if build != 'big' else 0.14, 0.014, (0, -0.05, z(0.79)), '#ffcc33', 'chest', rot=(0.6, 0, 0), seg=16, tseg=4)
         B.box((0.05, 0.015, 0.06), (0, -tr * 0.8 - 0.01, z(0.67)), '#ffcc33', 'chest')

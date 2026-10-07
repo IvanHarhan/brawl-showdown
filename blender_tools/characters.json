@@ -1,15 +1,15 @@
 {
   "_help": "Внешность бойцов. id совпадает с shared/brawlers.ts. Цвета — hex. После правки: blender --background --python blender_tools/build_characters.py",
   "_options": {
-    "build": "slim | normal | big",
+    "build": "slim | normal | big | huge",
     "hair.style": "none | buzz | short | curly | crop | taper | hood",
-    "top.type": "tee | hoodie | zip | bomber | tracksuit | sweater | varsity | checker | puffer",
-    "bottom.type": "jeans | flare | rolled | shorts | track",
+    "top.type": "tee | hoodie | zip | bomber | tracksuit | sweater | varsity | checker | puffer | anorak",
+    "bottom.type": "jeans | flare | rolled | shorts | track | joggers",
     "shoes.type": "runner | chunky | boots | retro",
-    "accessories": "chain | sunglasses | earring | watch",
-    "weapon": "pistols | sign | shotgun | shuriken | fists | gloves",
-    "emblem": "none | brand | berserk | horseshoe",
-    "extras": "top.boxlogo: true — красная плашка; bottom.crosses: true — серебряные кресты; bottom.tape: [цвета] — лампас"
+    "accessories": "chain | sunglasses | earring | watch | trident",
+    "weapon": "pistols | sign | shotgun | shuriken | fists | gloves | bag | bottle | blaster | arcade",
+    "emblem": "none | brand | berserk | horseshoe | label | heart | laurel",
+    "extras": "top.boxlogo: true — красная плашка; bottom.crosses: true — серебряные кресты; bottom.tape: [цвета] — лампас; top.badge: true — нашивка на рукаве; bottom.pattern: \"dogs\" — принт"
   },
   "characters": [
     {
@@ -79,42 +79,35 @@
       "emblem": "none"
     },
     {
-      "id": "bubu",
-      "height": 1.08,
-      "build": "big",
-      "skin": "#e6ad85",
+      "id": "shop",
+      "height": 1.1,
+      "build": "huge",
+      "skin": "#e0a77f",
       "hair": {
-        "style": "crop",
-        "color": "#2b1d14",
-        "under": "#3b2a20"
+        "style": "curly",
+        "color": "#1a1210"
       },
-      "beard": null,
+      "beard": {
+        "color": "#1a1210"
+      },
       "top": {
-        "type": "tracksuit",
-        "color": "#151515",
-        "stripe": "#e53935",
-        "trim": "#e53935"
+        "type": "tee",
+        "color": "#121212"
       },
       "bottom": {
-        "type": "track",
-        "color": "#111111",
-        "tape": [
-          "#ffffff",
-          "#e53935",
-          "#1e40c8"
-        ]
+        "type": "joggers",
+        "color": "#a3a6ab"
       },
       "shoes": {
-        "type": "runner",
+        "type": "chunky",
         "color": "#f5f5f5",
-        "accent": "#1f3f8f",
-        "sole": "#ffffff"
+        "accent": "#e6e6e6",
+        "sole": "#ffffff",
+        "big": true
       },
-      "accessories": [
-        "chain"
-      ],
-      "weapon": "shotgun",
-      "emblem": "none"
+      "accessories": [],
+      "weapon": "bag",
+      "emblem": "label"
     },
     {
       "id": "leon",
@@ -151,21 +144,22 @@
       "id": "iceberg",
       "height": 1.02,
       "build": "normal",
-      "skin": "#8a5a3c",
+      "skin": "#d9a27e",
       "hair": {
         "style": "hood",
-        "color": "#5b616b",
-        "inner": "#141010"
+        "color": "#3b2c24",
+        "inner": "#1a1210"
       },
       "beard": null,
       "top": {
         "type": "hoodie",
-        "color": "#5b616b",
-        "trim": "#d9d9d9"
+        "color": "#3b2c24",
+        "trim": "#cfc6bd",
+        "badge": true
       },
       "bottom": {
-        "type": "shorts",
-        "color": "#8c8c8c"
+        "type": "joggers",
+        "color": "#2a2a2a"
       },
       "shoes": {
         "type": "retro",
@@ -208,6 +202,99 @@
       "accessories": [],
       "weapon": "gloves",
       "emblem": "berserk"
+    },
+    {
+      "id": "hussein",
+      "height": 1.1,
+      "build": "huge",
+      "skin": "#e8b48e",
+      "hair": {
+        "style": "curly",
+        "color": "#5a3a24",
+        "count": 7
+      },
+      "beard": null,
+      "top": {
+        "type": "tee",
+        "color": "#ece7df"
+      },
+      "bottom": {
+        "type": "joggers",
+        "color": "#b9b4ac",
+        "pattern": "dogs"
+      },
+      "shoes": {
+        "type": "boots",
+        "color": "#c8a77a",
+        "accent": "#a88a5e",
+        "sole": "#8a7050"
+      },
+      "accessories": [
+        "trident"
+      ],
+      "weapon": "bottle",
+      "emblem": "heart"
+    },
+    {
+      "id": "gamas",
+      "height": 1.0,
+      "build": "normal",
+      "skin": "#f2c9a8",
+      "hair": {
+        "style": "buzz",
+        "color": "#d9c48a"
+      },
+      "beard": null,
+      "top": {
+        "type": "anorak",
+        "color": "#151515",
+        "trim": "#bfbfbf"
+      },
+      "bottom": {
+        "type": "joggers",
+        "color": "#161616"
+      },
+      "shoes": {
+        "type": "runner",
+        "color": "#1a1a1a",
+        "accent": "#e6e6e6",
+        "sole": "#ffffff"
+      },
+      "accessories": [],
+      "weapon": "blaster",
+      "emblem": "none"
+    },
+    {
+      "id": "bit8",
+      "height": 1.02,
+      "build": "normal",
+      "skin": "#efc3a2",
+      "hair": {
+        "style": "buzz",
+        "color": "#6b5038"
+      },
+      "beard": {
+        "color": "#8a6a4a"
+      },
+      "top": {
+        "type": "tracksuit",
+        "color": "#141414",
+        "stripe": "#f2f2f2",
+        "trim": "#141414"
+      },
+      "bottom": {
+        "type": "joggers",
+        "color": "#a9adb2"
+      },
+      "shoes": {
+        "type": "runner",
+        "color": "#f2f2f2",
+        "accent": "#141414",
+        "sole": "#ffffff"
+      },
+      "accessories": [],
+      "weapon": "arcade",
+      "emblem": "laurel"
     }
   ]
 }
