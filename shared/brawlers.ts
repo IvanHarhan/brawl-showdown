@@ -106,46 +106,47 @@ export interface Brawler {
   super: Super;
 }
 
+// Цифры близки к базовым (1-й уровень) бойцам Brawl Stars: скорость 2.4 кл/с — «обычная»,
+// перезарядка ~1.6 с, снаряды 8–12 кл/с, пауза между атаками ~0.5 с.
 export const BRAWLERS: Brawler[] = [
   {
     id: 'drip', name: 'Дрип', color: '#ffb02e',
-    hp: 6200, speed: 3.7, ammo: 3, reload: 1.05, cooldown: 0.5, superCharge: 4200,
-    attack: { kind: 'burst', count: 6, interval: 0.045, damage: 340, range: 9.5, speed: 26, radius: 0.13, jitterDeg: 3, look: 'bullet' },
-    super: { kind: 'burst', count: 12, interval: 0.04, damage: 320, range: 12, speed: 28, radius: 0.17, jitterDeg: 2, breaksWalls: true, look: 'heavy' },
+    hp: 2800, speed: 2.4, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 3000,
+    attack: { kind: 'burst', count: 6, interval: 0.1, damage: 360, range: 9.3, speed: 12, radius: 0.13, jitterDeg: 2, look: 'bullet' },
+    super: { kind: 'burst', count: 12, interval: 0.08, damage: 320, range: 12, speed: 13, radius: 0.17, jitterDeg: 2, breaksWalls: true, look: 'heavy' },
   },
   {
     id: 'mrp', name: 'Мистер Пи', color: '#e9e9e9',
-    hp: 7400, speed: 3.6, ammo: 3, reload: 1.15, cooldown: 0.5, superCharge: 3200,
-    attack: { kind: 'bouncer', damage: 1100, range: 8.5, speed: 16, radius: 0.3, hopDistance: 2.5, splashRadius: 1.3, splashDamage: 700, look: 'sign' },
-    super: { kind: 'base', range: 6, hp: 4000, lifetime: 40, spawnEvery: 3.5, maxMinions: 2,
-      minion: { hp: 1500, damage: 350, speed: 4.8, attackInterval: 0.6, sight: 9 } },
+    hp: 3200, speed: 2.4, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 2200,
+    attack: { kind: 'bouncer', damage: 760, range: 7.7, speed: 8, radius: 0.3, hopDistance: 2.5, splashRadius: 1.3, splashDamage: 600, look: 'sign' },
+    super: { kind: 'base', range: 6, hp: 2600, lifetime: 40, spawnEvery: 4, maxMinions: 2,
+      minion: { hp: 1000, damage: 260, speed: 2.9, attackInterval: 0.8, sight: 9 } },
   },
   {
     id: 'bubu', name: 'Бу-бу', color: '#4a7dff',
-    hp: 11000, speed: 3.7, ammo: 3, reload: 1.15, cooldown: 0.5, superCharge: 3600,
-    attack: { kind: 'spread', count: 5, spreadDeg: 32, damage: 440, minFalloff: 0.35, range: 5.2, speed: 22, radius: 0.16, look: 'pellet' },
-    super: { kind: 'charge', range: 9, speed: 17, damage: 1300, knockback: 2.2, breaksWalls: true },
+    hp: 5000, speed: 2.4, ammo: 3, reload: 1.6, cooldown: 0.5, superCharge: 2600,
+    attack: { kind: 'spread', count: 5, spreadDeg: 30, damage: 400, minFalloff: 0.35, range: 5, speed: 11, radius: 0.16, look: 'pellet' },
+    super: { kind: 'charge', range: 9, speed: 8, damage: 800, knockback: 2, breaksWalls: true },
   },
   {
     id: 'leon', name: 'Леон', color: '#7fbf4a',
-    hp: 7000, speed: 4.0, ammo: 3, reload: 1.05, cooldown: 0.5, superCharge: 3300,
-    attack: { kind: 'spread', count: 4, spreadDeg: 28, damage: 500, minFalloff: 0.3, range: 9.5, speed: 24, radius: 0.16, look: 'shuriken' },
+    hp: 3200, speed: 2.75, ammo: 3, reload: 1.9, cooldown: 0.5, superCharge: 2600,
+    attack: { kind: 'spread', count: 4, spreadDeg: 26, damage: 480, minFalloff: 0.55, range: 9.7, speed: 12, radius: 0.16, look: 'shuriken' },
     super: { kind: 'invisible', duration: 6 },
   },
   {
     id: 'iceberg', name: 'Айсберг', color: '#33c3d6',
-    hp: 12000, speed: 3.85, ammo: 3, reload: 0.8, cooldown: 0.5, superCharge: 3000,
-    attack: { kind: 'burst', count: 4, interval: 0.08, damage: 330, range: 2.3, speed: 28, radius: 0.45, jitterDeg: 6, look: 'fist' },
-    super: { kind: 'jump', range: 7, airTime: 0.65, radius: 1.9, damage: 1200, breaksWalls: false },
+    hp: 6000, speed: 2.55, ammo: 3, reload: 1.1, cooldown: 0.5, superCharge: 2400,
+    attack: { kind: 'burst', count: 4, interval: 0.12, damage: 300, range: 3, speed: 14, radius: 0.45, jitterDeg: 6, look: 'fist' },
+    super: { kind: 'jump', range: 7, airTime: 0.8, radius: 1.9, damage: 800, breaksWalls: false },
   },
   {
     id: 'ali', name: 'Али', color: '#c0392b',
-    hp: 10800, speed: 3.75, ammo: 3, reload: 1.1, cooldown: 0.5, superCharge: 3000,
-    attack: { kind: 'burst', count: 3, interval: 0.12, damage: 480, range: 2.4, speed: 26, radius: 0.48, jitterDeg: 5, look: 'fist' },
-    super: { kind: 'grab', range: 7, speed: 17, damage: 900, throwDistance: 3.5, stun: 0.4 },
+    hp: 5800, speed: 2.4, ammo: 3, reload: 1.3, cooldown: 0.55, superCharge: 2400,
+    attack: { kind: 'burst', count: 3, interval: 0.17, damage: 440, range: 3, speed: 13, radius: 0.48, jitterDeg: 5, look: 'fist' },
+    super: { kind: 'grab', range: 6, speed: 9, damage: 700, throwDistance: 3.5, stun: 0.4 },
   },
 ];
-
 export const BRAWLER_BY_ID: Record<string, Brawler> = Object.fromEntries(BRAWLERS.map((b) => [b.id, b]));
 
 export function getBrawler(id: string | undefined): Brawler {
