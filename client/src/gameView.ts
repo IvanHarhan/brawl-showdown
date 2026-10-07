@@ -384,6 +384,13 @@ export class GameView {
     // ввод и предсказание
     let [mx, my] = this.input.move();
     if (this.autoplay) [mx, my] = this.autopilot(now);
+    // зажатая ЛКМ — стреляем, как только есть патрон и прошла пауза атаки
+    if (this.input.lmb && w.alive && !this.dead) {
+      const me = w.meLatest();
+      const at = w.me.attack;
+      const busy = Math.max(w.me.cooldown, at.kind === 'burst' ? at.count * at.interval : 0);
+      if (me && me[6] >= 100 && now - this.lastLocalShot > busy * 1000 + 80) this.fire('attack', NaN, 1, false);
+    }
     w.ping = this.ping;
     w.predict(mx, my, dt, now);
     this.sendAcc += dt;

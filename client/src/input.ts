@@ -18,7 +18,9 @@ const DEAD = 0.18;
 const TAP_MS = 220;
 
 export class Input {
-  isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+  // ноутбук с сенсорным экраном — всё равно ПК: решает основной указатель
+  isTouch = matchMedia('(pointer: coarse)').matches;
+  lmb = false;
   mx = 0; my = 0;
   aim: AimState = { active: false, kind: 'attack', ax: 0, ay: 0, mag: 0 };
   mouse = { x: 0, y: 0, has: false };
@@ -36,12 +38,22 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       this.keys.add(e.code);
-      if (e.code === 'Space' && this.enabled) { e.preventDefault(); this.pcSuper(); }
+      if (e.code === 'Space' && this.enabled) { e.preventDefault(); if (!e.repeat) this.pcSuper(); }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.lmb = false; });
     window.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mousemove', (e) => { this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.has = true; });
+    // ПК: ЛКМ — атака (зажать — стрелять очередями), ПКМ — супер по точке мыши.
+    // Слушаем окно: HUD поверх поля прозрачен для кликов.
+    window.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || !this.enabled) return;
+      if ((e.target as HTMLElement).closest('button, .zone, input, .panel, a')) return;
+      this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.has = true;
+      if (e.button === 0) { this.lmb = true; this.h.fire('attack', NaN, 1, false); }
+      if (e.button === 2) this.pcSuper();
+    });
+    window.addEventListener('pointerup', (e) => { if (e.button === 0) this.lmb = false; });
   }
 
   mount(root: HTMLElement) {
@@ -118,13 +130,6 @@ export class Input {
       el.addEventListener('pointercancel', aimUp);
     }
 
-    // ПК: ЛКМ — атака, ПКМ — супер (по точке мыши)
-    root.addEventListener('mousedown', (e) => {
-      if (this.isTouch || !this.enabled) return;
-      if ((e.target as HTMLElement).closest('button, .zone')) return;
-      if (e.button === 0) this.h.fire('attack', NaN, 1, false);
-      if (e.button === 2) this.pcSuper();
-    });
     if (!this.isTouch) root.classList.add('pc');
   }
 
@@ -163,6 +168,7 @@ export class Input {
     this.moveId = this.aimId = null;
     this.aim.active = false;
     this.keys.clear();
+    this.lmb = false;
     this.els?.moveStick.classList.add('hidden');
     this.els?.aimStick.classList.add('hidden');
   }
