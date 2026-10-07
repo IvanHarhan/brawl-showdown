@@ -111,7 +111,31 @@ export class ProjectileViews {
         s.name = 'spin';
         g.add(s);
       }
-      else if (look === 'burger') {
+      else if (look === 'shout') {
+        // крик Боба: надпись и звуковые дуги
+        const c = document.createElement('canvas');
+        c.width = 512; c.height = 128;
+        const g2 = c.getContext('2d')!;
+        g2.font = '900 64px Arial Black, Arial, sans-serif';
+        g2.textAlign = 'center'; g2.textBaseline = 'middle';
+        g2.lineWidth = 12; g2.strokeStyle = '#120c2a'; g2.strokeText('ИДИТЕ НАХУЙ!', 256, 64);
+        g2.fillStyle = '#ffd23f'; g2.fillText('ИДИТЕ НАХУЙ!', 256, 64);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+        sp.scale.set(2.2, 0.55, 1);
+        sp.position.y = 0.9;
+        sp.renderOrder = 12;
+        const waves = new THREE.Group();
+        for (let i = 0; i < 3; i++) {
+          const arc = new THREE.Mesh(new THREE.TorusGeometry(0.3 + i * 0.18, 0.035, 4, 16, Math.PI * 0.9), new THREE.MeshBasicMaterial({ color: 0xfff3b0, transparent: true, opacity: 0.85 - i * 0.2, depthWrite: false }));
+          arc.rotation.set(-Math.PI / 2, 0, Math.PI * 0.05);
+          arc.position.z = -i * 0.2;
+          waves.add(arc);
+        }
+        waves.name = 'pulse';
+        g.add(sp, waves);
+      } else if (look === 'burger') {
         // бургер: булка, котлета, сыр
         const s = new THREE.Group();
         const bun = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial({ color: 0xe0a14a }));
@@ -166,6 +190,8 @@ export class ProjectileViews {
       e.obj.position.x = p.x;
       e.obj.position.z = p.y;
       e.obj.position.y = 0.55 + (p.h ?? 0);
+      const pulse = e.obj.getObjectByName('pulse');
+      if (pulse) pulse.scale.setScalar(1 + 0.25 * Math.sin(now / 60));
       const tumble = e.obj.getObjectByName('tumble');
       if (tumble) { tumble.rotation.x = now / 90; tumble.rotation.z = now / 140; }
       e.obj.rotation.y = Math.PI / 2 - p.a;

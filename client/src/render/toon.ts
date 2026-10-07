@@ -6,8 +6,9 @@ let gradient: THREE.DataTexture | null = null;
 /** 3 полосы света. */
 export function toonGradient() {
   if (gradient) return gradient;
-  const data = new Uint8Array([90, 90, 90, 255, 175, 175, 175, 255, 255, 255, 255, 255]);
-  gradient = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
+  // 4 ступени помягче — меньше «мультяшности»
+  const data = new Uint8Array([95, 95, 95, 255, 150, 150, 150, 255, 205, 205, 205, 255, 255, 255, 255, 255]);
+  gradient = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
   gradient.minFilter = THREE.NearestFilter;
   gradient.magFilter = THREE.NearestFilter;
   gradient.generateMipmaps = false;
@@ -20,7 +21,7 @@ export function toonMaterial(opts: THREE.MeshToonMaterialParameters = {}) {
 }
 
 /** Толщина обводки — доля расстояния до камеры, поэтому на экране она почти постоянная. */
-export const OUTLINE_K = { value: 0.0021 };
+export const OUTLINE_K = { value: 0.0016 };
 
 /** Чёрная обводка «inverted hull»: копия меша, грани наружу, вершины раздуты по нормали. */
 export function outlineMaterial(color = 0x0d0820) {

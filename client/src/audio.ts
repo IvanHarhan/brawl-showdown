@@ -25,6 +25,10 @@ export class Audio {
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       this.noise = n;
       fetch('/voice/manifest.json').then((r) => r.json()).then((m) => { this.manifest = m; }).catch(() => {});
+      // записанные звуки (Kenney, CC0); если файла нет — синтез ниже
+      fetch('/sfx/manifest.json').then((r) => r.json()).then((m: Record<string, string[]>) => {
+        for (const [name, files] of Object.entries(m)) this.samples.set(name, files.map((f) => this.loadPath(`sfx/${f}`)));
+      }).catch(() => {});
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     // пустой звук — окончательно будит iOS
@@ -33,7 +37,11 @@ export class Audio {
     s.buffer = b; s.connect(this.master); s.start(0);
   }
 
-  private load(path: string) {
+  private samples = new Map<string, Promise<AudioBuffer | null>[]>();
+
+  private load(path: string) { return this.loadPath(`voice/${path}`); }
+
+  private loadPath(path: string) {
     let p = this.buffers.get(path);
     if (!p) {
       const decode = async (url: string) => {
@@ -42,7 +50,7 @@ export class Audio {
         return await this.ctx!.decodeAudioData(await r.arrayBuffer());
       };
       // .ogg не декодируется в старом Safari — тогда берём .m4a с тем же именем
-      p = decode(`/voice/${path}.ogg`).catch(() => decode(`/voice/${path}.m4a`)).catch(() => null);
+      p = decode(`/${path}.ogg`).catch(() => decode(`/${path}.m4a`)).catch(() => null);
       this.buffers.set(path, p);
     }
     return p;
@@ -109,8 +117,22 @@ export class Audio {
     o.start(t); o.stop(t + dur + 0.02);
   }
 
-  sfx(name: 'shot' | 'shotgun' | 'throw' | 'punch' | 'hit' | 'hitme' | 'box' | 'boxbreak' | 'can' | 'gas' | 'super' | 'boom' | 'win' | 'lose' | 'click' | 'death', volume = 1) {
+  sfx(name: 'shot' | 'shotgun' | 'throw' | 'punch' | 'hit' | 'hitme' | 'box' | 'boxbreak' | 'can' | 'gas' | 'super' | 'boom' | 'win' | 'lose' | 'click' | 'death' | 'glass' | 'laser', volume = 1) {
     if (!this.ctx || this.muted || volume <= 0.02) return;
+    const list = this.samples.get(name);
+    if (list?.length) {
+      list[Math.floor(Math.random() * list.length)].then((buf) => {
+        if (!buf || !this.ctx) return;
+        const s = this.ctx.createBufferSource();
+        const g = this.ctx.createGain();
+        g.gain.value = volume;
+        s.buffer = buf;
+        s.playbackRate.value = 0.92 + Math.random() * 0.16;
+        s.connect(g).connect(this.master);
+        s.start();
+      });
+      return;
+    }
     const v = volume;
     switch (name) {
       case 'shot': this.noiseHit(0.09, 0.35 * v, 2200, 0.8); this.tone(900, 180, 0.08, 0.12 * v, 'square'); break;
@@ -127,6 +149,8 @@ export class Audio {
       case 'boom': this.noiseHit(0.5, 0.7 * v, 250, 0.5, 'lowpass'); this.tone(120, 35, 0.45, 0.5 * v); break;
       case 'death': this.tone(500, 80, 0.5, 0.25 * v, 'triangle'); break;
       case 'click': this.tone(800, 600, 0.04, 0.12 * v, 'square'); break;
+      case 'glass': this.noiseHit(0.2, 0.4 * v, 4000, 2); break;
+      case 'laser': this.tone(1600, 300, 0.12, 0.15 * v, 'square'); break;
       case 'win': [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, f, 0.22, 0.22 * v, 'triangle', i * 0.12)); break;
       case 'lose': [440, 392, 330, 262].forEach((f, i) => this.tone(f, f * 0.98, 0.3, 0.2 * v, 'triangle', i * 0.18)); break;
     }

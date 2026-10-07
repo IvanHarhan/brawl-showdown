@@ -33,6 +33,7 @@ export class CharacterView {
   current: AnimName | '' = '';
   private oneShotUntil = 0;
   private flashUntil = 0;
+  runScale = 0.8;
   private lean = 0;
   private kick = 0;
   private hop = 0;
@@ -105,7 +106,8 @@ export class CharacterView {
   update(dt: number, now: number, moving: boolean, dead: boolean) {
     if (dead) this.play('death', 0.1);
     else if (now > this.oneShotUntil) this.play(moving ? 'run' : 'idle', 0.15);
-    if (moving && !dead) this.actions.run?.setEffectiveTimeScale(1.25);
+    // скорость шагов под реальную скорость бойца, чтобы ноги не «буксовали»
+    if (moving && !dead) this.actions.run?.setEffectiveTimeScale(this.runScale);
     this.mixer?.update(dt);
     // процедурная добавка: наклон в беге, отдача при атаке, подскок на супере
     if (this.model && !dead) {

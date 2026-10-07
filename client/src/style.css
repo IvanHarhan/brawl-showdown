@@ -207,4 +207,4 @@ html, body {
 #hud .ping.mid { color: #ffd23f; }
 #hud .ping.bad { color: #ff6b6b; }
 #death { justify-content: flex-end; background: linear-gradient(to bottom, #0000 35%, #000b 100%); }
-#death .panel.compact { margin: 0 0 calc(var(--sab) + 10px); background: #000c; }
+#death .panel.compact { margin: 0 0 calc(var(--sab) + 10px); background: #000c; }#hud .zoombtn { position: absolute; top: calc(var(--sat) + 44px); right: calc(var(--sar) + 10px); pointer-events: auto; font-size: 20px; width: 44px; height: 44px; border-radius: 12px; border: 2px solid #fff4; background: #000a; color: #fff; cursor: pointer; }

@@ -1,6 +1,6 @@
 // Формат сообщений клиент <-> сервер. Числа координат передаются ×100 (целые).
 
-export const LOOKS = ['bullet', 'pellet', 'shuriken', 'fist', 'sign', 'heavy', 'burger', 'bottle', 'laser', 'ball'] as const;
+export const LOOKS = ['bullet', 'pellet', 'shuriken', 'fist', 'sign', 'heavy', 'burger', 'bottle', 'laser', 'ball', 'shout'] as const;
 
 /** Клиент -> сервер */
 export type InputItem = [seq: number, mx: number, my: number, dt: number];
