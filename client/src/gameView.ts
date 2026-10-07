@@ -76,7 +76,7 @@ export class GameView {
     this.hud = document.createElement('div');
     this.hud.id = 'hud';
     this.hud.innerHTML = `
-      <div id="tags"></div><div id="dmgs"></div>
+      <div id="tags"></div><div id="dmgs"></div><div id="feed"></div>
       <div class="top"><span class="pill" id="aliveP">👤 10</span><span class="pill" id="gasP"></span></div>
       <div class="ping" id="ping"></div>
       <div class="zone" id="moveZone"></div>
@@ -267,7 +267,8 @@ export class GameView {
         break;
       }
       case 'die': {
-        const [, slot, place] = e;
+        const [, slot, place, killer] = e;
+        this.killFeed(slot, killer);
         const cv = this.chars.get(slot);
         if (cv) { const p = cv.root.position; this.fx.burst(p.x, 0.8, p.z, 0xffffff, 18, 4, 5); this.fx.ring(p.x, p.z, 1.6, 0xffffff); }
         const r = w.rosterOf(slot);
@@ -323,6 +324,17 @@ export class GameView {
         break;
       }
     }
+  }
+
+  private killFeed(victim: number, killer: number) {
+    const feed = this.hud.querySelector('#feed') as HTMLElement;
+    const v = this.world.rosterOf(victim), k = killer >= 0 ? this.world.rosterOf(killer) : null;
+    const row = document.createElement('div');
+    row.className = 'kf' + (victim === this.world.you || killer === this.world.you ? ' me' : '');
+    row.textContent = k ? `${k.name} 💥 ${v?.name ?? '?'}` : `☁ ${v?.name ?? '?'}`;
+    feed.prepend(row);
+    while (feed.children.length > 4) feed.lastElementChild!.remove();
+    setTimeout(() => row.remove(), 5000);
   }
 
   private damageNumber(x: number, y: number, dmg: number, cls: string) {
