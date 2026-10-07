@@ -186,7 +186,16 @@ function atkDamage(id: string) {
 
 function joinOpts() {
   const name = (S.name || '').trim() || 'Игрок' + Math.floor(Math.random() * 90 + 10);
-  return { name, brawler: S.brawler, fast: params.has('fast') };
+  return { name, brawler: S.brawler, fast: params.has('fast'), dev: deviceInfo() };
+}
+
+/** Устройство и тип сети — только для серверного лога пинга. */
+function deviceInfo() {
+  const ua = navigator.userAgent;
+  const os = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'other';
+  const br = /CriOS|Chrome/.test(ua) ? 'Chrome' : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : 'browser';
+  const net = (navigator as unknown as { connection?: { effectiveType?: string } }).connection?.effectiveType;
+  return ` `;
 }
 
 function overlay(html: string) {
