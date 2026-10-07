@@ -1,0 +1,13 @@
+# Клиент. Адрес сервера задаётся переменной VITE_SERVER_URL (Site settings → Environment variables)
+# или при ручной сборке: $env:VITE_SERVER_URL="https://....onrender.com"; npm run build:client
+[build]
+  command = "npm ci --include=dev && npm run build:client"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[headers]]
+  for = "/models/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

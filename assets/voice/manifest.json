@@ -1,0 +1,92 @@
+{
+ "ali": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "bubu": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "drip": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "iceberg": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "leon": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "mrp": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ }
+}

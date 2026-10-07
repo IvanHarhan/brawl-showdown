@@ -1,0 +1,523 @@
+"""Собирает бойцов из примитивов по blender_tools/characters.json и экспортирует assets/models/<id>.glb.
+
+Запуск (Blender нет в PATH):
+  "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Blender\\blender.exe" --background --factory-startup --python blender_tools/build_characters.py
+Только один боец:  ... --python blender_tools/build_characters.py -- drip
+
+Модель: чиби-пропорции, вперёд смотрит -Y (в glTF это +Z), один меш с цветами вершин,
+жёсткая привязка частей к костям, анимации idle/run/attack/super/death.
+"""
+import bpy
+import bmesh
+import json
+import math
+import os
+import sys
+from mathutils import Matrix, Vector, Euler
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+OUT = os.path.join(ROOT, 'assets', 'models')
+FPS = 30
+
+BONES = ['root', 'hips', 'chest', 'head', 'arm_L', 'arm_R', 'leg_L', 'leg_R']
+BI = {n: i for i, n in enumerate(BONES)}
+
+
+def srgb(h):
+    h = h.lstrip('#')
+    if len(h) == 3:
+        h = ''.join(ch * 2 for ch in h)
+    c = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    return (*lin, 1.0)
+
+
+class Builder:
+    def __init__(self):
+        self.bm = bmesh.new()
+        self.dl = self.bm.verts.layers.deform.verify()
+        self.cl = self.bm.loops.layers.float_color.new('Color')
+
+    def _finish(self, verts, color, bone, smooth):
+        col = srgb(color)
+        faces = set()
+        for v in verts:
+            v[self.dl][BI[bone]] = 1.0
+            faces.update(v.link_faces)
+        for f in faces:
+            f.smooth = smooth
+            for l in f.loops:
+                l[self.cl] = col
+        return verts
+
+    def mat(self, loc, rot=(0, 0, 0), scale=(1, 1, 1)):
+        m = Matrix.Translation(Vector(loc)) @ Euler(rot).to_matrix().to_4x4()
+        s = Matrix.Diagonal((*scale, 1))
+        return m @ s
+
+    def box(self, size, loc, color, bone, rot=(0, 0, 0)):
+        r = bmesh.ops.create_cube(self.bm, size=1.0, matrix=self.mat(loc, rot, size))
+        return self._finish(r['verts'], color, bone, False)
+
+    def sphere(self, r, loc, color, bone, scale=(1, 1, 1), seg=10, rings=7, rot=(0, 0, 0), keep=None):
+        res = bmesh.ops.create_uvsphere(self.bm, u_segments=seg, v_segments=rings, radius=r, matrix=self.mat(loc, rot, scale))
+        verts = res['verts']
+        if keep:
+            c = Vector(loc)
+            drop = [v for v in verts if not keep((v.co - c).x / (r * scale[0]), (v.co - c).y / (r * scale[1]), (v.co - c).z / (r * scale[2]))]
+            bmesh.ops.delete(self.bm, geom=drop, context='VERTS')
+            verts = [v for v in verts if v.is_valid]
+        return self._finish(verts, color, bone, True)
+
+    def ico(self, r, loc, color, bone, sub=1):
+        res = bmesh.ops.create_icosphere(self.bm, subdivisions=sub, radius=r, matrix=self.mat(loc))
+        return self._finish(res['verts'], color, bone, True)
+
+    def cyl(self, r1, r2, z0, z1, xy, color, bone, seg=10, scale_y=1.0, cap=True):
+        h = z1 - z0
+        res = bmesh.ops.create_cone(self.bm, cap_ends=cap, cap_tris=False, segments=seg, radius1=r1, radius2=r2, depth=h,
+                                    matrix=self.mat((xy[0], xy[1], (z0 + z1) / 2), (0, 0, 0), (1, scale_y, 1)))
+        return self._finish(res['verts'], color, bone, True)
+
+    def rod(self, r, a, b, color, bone, seg=8):
+        """Цилиндр между точками a и b."""
+        a, b = Vector(a), Vector(b)
+        d = b - a
+        q = Vector((0, 0, 1)).rotation_difference(d.normalized())
+        m = Matrix.Translation((a + b) / 2) @ q.to_matrix().to_4x4()
+        res = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=seg, radius1=r, radius2=r, depth=d.length, matrix=m)
+        return self._finish(res['verts'], color, bone, True)
+
+    def torus(self, R, r, loc, color, bone, rot=(0, 0, 0), seg=14, tseg=5):
+        m = self.mat(loc, rot)
+        rings = []
+        for i in range(seg):
+            a = 2 * math.pi * i / seg
+            ring = []
+            for j in range(tseg):
+                b = 2 * math.pi * j / tseg
+                p = Vector(((R + r * math.cos(b)) * math.cos(a), (R + r * math.cos(b)) * math.sin(a), r * math.sin(b)))
+                ring.append(self.bm.verts.new(m @ p))
+            rings.append(ring)
+        for i in range(seg):
+            for j in range(tseg):
+                a, b = rings[i][j], rings[(i + 1) % seg][j]
+                c, d = rings[(i + 1) % seg][(j + 1) % tseg], rings[i][(j + 1) % tseg]
+                self.bm.faces.new((a, b, c, d))
+        return self._finish([v for ring in rings for v in ring], color, bone, True)
+
+
+def build_body(B, c):
+    H = c.get('height', 1.0)
+    build = c.get('build', 'normal')
+    tr = {'slim': 0.155, 'normal': 0.175, 'big': 0.22}[build]
+    ar = {'slim': 0.05, 'normal': 0.056, 'big': 0.07}[build]
+    lr = {'slim': 0.062, 'normal': 0.068, 'big': 0.082}[build]
+    skin = c['skin']
+    top, bottom, shoes, hair = c['top'], c['bottom'], c['shoes'], c['hair']
+    z = lambda v: v * H
+    sx = tr + ar * 0.9  # плечи
+    lx = tr * 0.48      # ноги
+
+    # --- обувь
+    for side, bone in ((1, 'leg_L'), (-1, 'leg_R')):
+        x = lx * side
+        st = shoes['type']
+        big = shoes.get('big') or st == 'chunky'
+        sole_h = 0.06 if big else 0.035
+        w, l = (0.15, 0.27) if big else (0.13, 0.24)
+        B.box((w + 0.01, l + 0.01, sole_h), (x, -0.035, sole_h / 2), shoes['sole'], bone)
+        uh = 0.17 if st == 'boots' else 0.075
+        B.box((w, l * 0.92, uh), (x, -0.03 + (0.02 if st == 'boots' else 0), sole_h + uh / 2), shoes['color'], bone)
+        B.sphere(w / 2, (x, -0.03 - l * 0.42, sole_h + 0.025), shoes['color'], bone, scale=(1, 0.8, 0.6), seg=8, rings=5)
+        # боковая вставка — узнаваемая форма без логотипов
+        if st in ('runner', 'chunky', 'retro'):
+            B.box((0.012, l * 0.55, 0.035), (x + side * w / 2, -0.04, sole_h + 0.04), shoes['accent'], bone, rot=(0.35, 0, 0))
+        if st == 'retro':
+            B.box((w + 0.006, l * 0.3, 0.05), (x, 0.06, sole_h + 0.035), shoes['accent'], bone)
+        if st == 'boots':
+            B.box((w + 0.008, 0.02, 0.02), (x, -0.07, sole_h + uh - 0.02), shoes['accent'], bone)
+
+    # --- ноги
+    leg_top = z(0.46)
+    foot = 0.1
+    for side, bone in ((1, 'leg_L'), (-1, 'leg_R')):
+        x = lx * side
+        bt = bottom['type']
+        if bt == 'shorts':
+            B.cyl(lr * 0.75, lr * 0.75, foot, z(0.3), (x, 0), skin, bone, seg=8)
+            B.cyl(lr * 1.35, lr * 1.2, z(0.27), leg_top, (x, 0), bottom['color'], bone)
+        elif bt == 'flare':
+            B.cyl(lr * 1.75, lr * 1.0, foot - 0.02, z(0.3), (x, 0), bottom['color'], bone)
+            B.cyl(lr * 1.0, lr * 1.1, z(0.3), leg_top, (x, 0), bottom['color'], bone)
+        else:
+            B.cyl(lr, lr * 1.1, foot + (0.08 if shoes['type'] == 'boots' else 0), leg_top, (x, 0), bottom['color'], bone)
+            if bt == 'rolled':
+                B.cyl(lr * 1.3, lr * 1.25, foot + 0.07, foot + 0.12, (x, 0), bottom.get('cuff', '#7f9fd0'), bone)
+            if bt == 'track':
+                B.box((0.012, 0.02, leg_top - foot), (x + side * lr * 1.02, 0, (leg_top + foot) / 2), bottom.get('stripe', '#fff'), bone)
+
+    # --- таз и торс
+    B.cyl(tr * 0.92, tr * 0.95, z(0.42), z(0.52), (0, 0), bottom['color'], 'hips', seg=12, scale_y=0.8)
+    t0, t1 = z(0.5), z(0.84)
+    tt = top['type']
+    if tt == 'sweater':
+        n = top.get('stripes', 7)
+        for i in range(n):
+            a = t0 + (t1 - t0) * i / n
+            b = t0 + (t1 - t0) * (i + 1) / n
+            k = i / n
+            B.cyl(tr * (1.0 - 0.05 * k), tr * (1.0 - 0.05 * (k + 1 / n)), a, b, (0, 0), top['color'] if i % 2 == 0 else top['stripe'], 'chest', seg=12, scale_y=0.78, cap=(i in (0, n - 1)))
+    else:
+        B.cyl(tr, tr * 0.95, t0, t1, (0, 0), top['color'], 'chest', seg=12, scale_y=0.78)
+    B.sphere(tr * 0.97, (0, 0, t1), top['color'] if tt != 'sweater' else top['stripe'], 'chest', scale=(1, 0.78, 0.38), seg=12, rings=6)
+    trim = top.get('trim')
+    if tt in ('bomber', 'varsity', 'zip', 'tracksuit'):
+        B.cyl(tr * 1.03, tr * 1.03, t0 - 0.005, t0 + 0.04, (0, 0), trim or top['color'], 'chest', seg=12, scale_y=0.8)
+        B.cyl(0.085, 0.08, t1 + 0.0, t1 + 0.06, (0, 0), trim or top['color'], 'chest', seg=10)
+    if tt in ('zip', 'tracksuit'):
+        B.box((0.014, 0.01, t1 - t0), (0, -tr * 0.78, (t0 + t1) / 2), top.get('stripe', trim or '#ccc'), 'chest')
+    if tt == 'zip':
+        B.torus(0.1, 0.035, (0, 0.06, t1 + 0.02), top['color'], 'chest', rot=(1.2, 0, 0), seg=10, tseg=4)
+    if tt == 'varsity':
+        B.box((0.06, 0.01, 0.06), (0.08, -tr * 0.78, t1 - 0.1), trim or '#fff', 'chest')
+    if tt == 'hoodie':
+        B.torus(0.11, 0.04, (0, 0.06, t1 + 0.02), top['color'], 'chest', rot=(1.2, 0, 0), seg=10, tseg=4)
+
+    if c.get('emblem') == 'brand':
+        # своя эмблема: клинок и два отростка, тёмно-красная
+        ec = '#6b0f0f'
+        fy = -tr * 0.78 - 0.006
+        B.box((0.022, 0.008, 0.17), (0, fy, z(0.68)), ec, 'chest')
+        B.box((0.018, 0.008, 0.09), (0.035, fy, z(0.72)), ec, 'chest', rot=(0, -0.65, 0))
+        B.box((0.018, 0.008, 0.09), (-0.035, fy, z(0.72)), ec, 'chest', rot=(0, 0.65, 0))
+        B.sphere(0.018, (0, fy, z(0.58)), ec, 'chest', scale=(1, 0.4, 1.4), seg=6, rings=4)
+
+    # --- руки
+    sh = z(0.8)
+    hand_z = z(0.47)
+    weapon = c.get('weapon')
+    for side, bone in ((1, 'arm_L'), (-1, 'arm_R')):
+        x = sx * side
+        sleeve = top.get('sleeves', top['color'])
+        if tt == 'sweater':
+            n = 4
+            for i in range(n):
+                a = sh - (sh - hand_z - 0.04) * i / n
+                b = sh - (sh - hand_z - 0.04) * (i + 1) / n
+                B.cyl(ar, ar, b, a, (x, 0), top['color'] if i % 2 == 0 else top['stripe'], bone, seg=8)
+        elif tt == 'tee':
+            B.cyl(ar * 1.15, ar * 1.25, z(0.66), sh, (x, 0), top['color'], bone, seg=8)
+            B.cyl(ar * 0.85, ar * 0.85, hand_z + 0.03, z(0.67), (x, 0), skin, bone, seg=8)
+        else:
+            B.cyl(ar, ar * 1.05, hand_z + 0.04, sh, (x, 0), sleeve, bone, seg=8)
+            if trim and tt in ('bomber', 'varsity'):
+                B.cyl(ar * 1.12, ar * 1.12, hand_z + 0.04, hand_z + 0.08, (x, 0), trim, bone, seg=8)
+            if tt == 'tracksuit':
+                B.box((0.012, 0.016, sh - hand_z - 0.04), (x + side * ar, 0, (sh + hand_z) / 2 + 0.02), top.get('stripe', '#fff'), bone)
+        B.sphere(ar * 1.15, (x, 0, sh), sleeve if tt != 'sweater' else top['color'], bone, seg=8, rings=5)
+        hr = ar * 1.25
+        hcol = skin
+        if weapon == 'fists':
+            hr = ar * 1.75
+        if weapon == 'gloves':
+            hr, hcol = ar * 1.8, '#b71c1c'
+        B.sphere(hr, (x, 0, hand_z), hcol, bone, seg=8, rings=6)
+        if weapon == 'gloves':
+            B.cyl(ar * 1.3, ar * 1.3, hand_z + hr * 0.6, hand_z + hr * 0.6 + 0.04, (x, 0), '#f2f2f2', bone, seg=8)
+
+    if 'watch' in c.get('accessories', []):
+        B.cyl(ar * 1.15, ar * 1.15, hand_z + 0.06, hand_z + 0.09, (sx, 0), '#d4d4d4', 'arm_L', seg=8)
+
+    # --- оружие
+    hx = -sx
+    if weapon == 'pistols':
+        for side, bone in ((1, 'arm_L'), (-1, 'arm_R')):
+            x = sx * side
+            B.box((0.045, 0.17, 0.06), (x, -0.07, hand_z - 0.03), '#d9a520', bone)
+            B.box((0.04, 0.05, 0.08), (x, -0.0, hand_z - 0.07), '#2b2b2b', bone, rot=(-0.3, 0, 0))
+    elif weapon == 'sign':
+        B.rod(0.014, (hx, -0.02, hand_z - 0.05), (hx, -0.02, hand_z + 0.32), '#8d5a2b', 'arm_R', seg=6)
+        B.box((0.34, 0.025, 0.22), (hx, -0.03, hand_z + 0.38), '#d32f2f', 'arm_R')
+        B.box((0.31, 0.03, 0.19), (hx, -0.035, hand_z + 0.38), '#ffffff', 'arm_R')
+        B.box((0.22, 0.034, 0.025), (hx, -0.037, hand_z + 0.41), '#111111', 'arm_R')
+        B.box((0.16, 0.034, 0.025), (hx, -0.037, hand_z + 0.35), '#111111', 'arm_R')
+    elif weapon == 'shotgun':
+        B.rod(0.035, (hx, 0.05, hand_z - 0.02), (hx, -0.42, hand_z - 0.02), '#3a3a3a', 'arm_R', seg=8)
+        B.rod(0.03, (hx - 0.05, 0.0, hand_z - 0.02), (hx - 0.05, -0.38, hand_z - 0.02), '#3a3a3a', 'arm_R', seg=8)
+        B.box((0.07, 0.16, 0.09), (hx - 0.02, 0.12, hand_z - 0.05), '#7a4a22', 'arm_R', rot=(0.2, 0, 0))
+        B.box((0.08, 0.12, 0.05), (hx - 0.02, -0.2, hand_z - 0.06), '#7a4a22', 'arm_R')
+    elif weapon == 'shuriken':
+        for a in (0, math.pi / 4):
+            B.cyl(0.09, 0.09, hand_z - 0.005, hand_z + 0.005, (hx, -0.08), '#9fa6ad', 'arm_R', seg=4, cap=True)
+            B.sphere(0.02, (hx, -0.08, hand_z), '#333', 'arm_R', seg=6, rings=4)
+
+    # --- шея и голова
+    hz = z(0.84) + 0.29
+    B.cyl(0.06, 0.06, z(0.82), hz - 0.18, (0, 0), skin, 'head', seg=8)
+    head_r = 0.325
+    B.sphere(head_r, (0, 0, hz), skin, 'head', scale=(1.0, 0.95, 0.95), seg=14, rings=10)
+    for side in (1, -1):
+        B.sphere(0.055, (side * head_r * 0.98, 0.0, hz - 0.01), skin, 'head', scale=(0.6, 1, 1), seg=8, rings=5)
+    eye_z = hz - 0.01
+    fy = -head_r * 0.95
+    if 'sunglasses' in c.get('accessories', []):
+        B.box((0.44, 0.04, 0.1), (0, fy + 0.0, eye_z + 0.01), '#101010', 'head')
+        B.box((0.1, 0.045, 0.02), (0.09, fy - 0.001, eye_z + 0.03), '#5ad1ff', 'head')
+    else:
+        for side in (1, -1):
+            B.sphere(0.07, (side * 0.115, fy + 0.04, eye_z), '#ffffff', 'head', scale=(0.9, 0.55, 1.15), seg=8, rings=6)
+            B.sphere(0.037, (side * 0.115, fy + 0.0, eye_z - 0.005), '#1a1a1a', 'head', scale=(1, 0.5, 1.2), seg=6, rings=4)
+        brow = hair['color'] if hair['style'] != 'none' else '#5a4030'
+        if c.get('beard'):
+            brow = c['beard']['color']
+        for side in (1, -1):
+            B.box((0.09, 0.02, 0.025), (side * 0.115, fy + 0.025, eye_z + 0.1), brow, 'head', rot=(0, side * 0.12, 0))
+    B.sphere(0.03, (0, fy - 0.01, hz - 0.07), skin, 'head', seg=6, rings=4)
+    if not c.get('beard'):
+        B.box((0.07, 0.02, 0.016), (0, fy + 0.03, hz - 0.14), '#5a2a22', 'head')
+
+    # --- волосы
+    st = hair['style']
+    if st != 'none':
+        under = hair.get('under', hair['color'])
+        cap_keep = lambda x, y, zz: zz > (-0.3 + 0.75 * ((-y + 1) / 2)) * 0.95 or (zz > -0.35 and y > 0.2)
+        rr = head_r + (0.012 if st == 'buzz' else 0.025)
+        B.sphere(rr, (0, 0.005, hz), under if st == 'crop' else hair['color'], 'head', scale=(1.0, 0.97, 0.97), seg=14, rings=10, keep=cap_keep)
+        if st == 'short':
+            B.sphere(head_r * 0.85, (0, -0.02, hz + 0.1), hair['color'], 'head', scale=(1.05, 1.0, 0.6), seg=12, rings=7)
+        if st == 'crop':
+            B.sphere(head_r * 0.82, (0, -0.02, hz + 0.13), hair['color'], 'head', scale=(1.05, 1.0, 0.55), seg=12, rings=7)
+        if st == 'curly':
+            n = 26
+            ga = math.pi * (3 - math.sqrt(5))
+            for i in range(n):
+                yy = 1 - (i / (n - 1)) * 1.3
+                rad = math.sqrt(max(0, 1 - yy * yy))
+                th = ga * i
+                v = Vector((math.cos(th) * rad, math.sin(th) * rad, yy))
+                if not cap_keep(v.x, v.y, v.z) and v.z < 0.3:
+                    continue
+                p = Vector((0, 0, hz)) + v * (head_r + 0.04)
+                B.ico(0.075 + 0.02 * ((i * 7) % 3) / 2, tuple(p), hair['color'], 'head', sub=1)
+    if c.get('beard'):
+        bc = c['beard']['color']
+        B.sphere(head_r * 0.98, (0, -0.02, hz - 0.03), bc, 'head', scale=(1.0, 0.98, 1.0), seg=14, rings=10,
+                 keep=lambda x, y, zz: zz < -0.05 and y < 0.35)
+        B.box((0.14, 0.03, 0.03), (0, fy - 0.005, hz - 0.11), bc, 'head')
+    if 'earring' in c.get('accessories', []):
+        B.ico(0.022, (-head_r * 1.0, -0.01, hz - 0.08), '#ffd54a', 'head', sub=1)
+
+    # --- цепь
+    if 'chain' in c.get('accessories', []):
+        B.torus(0.12 if build != 'big' else 0.14, 0.014, (0, -0.05, z(0.79)), '#ffcc33', 'chest', rot=(0.6, 0, 0), seg=16, tseg=4)
+        B.box((0.05, 0.015, 0.06), (0, -tr * 0.8 - 0.01, z(0.67)), '#ffcc33', 'chest')
+
+    return {'tr': tr, 'sx': sx, 'lx': lx, 'sh': sh, 'hand_z': hand_z, 'hz': hz, 'H': H}
+
+
+def make_armature(name, dims):
+    H = dims['H']
+    arm = bpy.data.armatures.new(name + '_rig')
+    obj = bpy.data.objects.new(name + '_rig', arm)
+    bpy.context.scene.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.edit_bones
+
+    def bone(n, head, tail, parent=None):
+        b = eb.new(n)
+        b.head, b.tail = head, tail
+        b.roll = 0
+        if parent:
+            b.parent = eb[parent]
+        return b
+
+    bone('root', (0, 0, 0), (0, 0, 0.2))
+    bone('hips', (0, 0, 0.46 * H), (0, 0, 0.55 * H), 'root')
+    bone('chest', (0, 0, 0.55 * H), (0, 0, 0.84 * H), 'hips')
+    bone('head', (0, 0, 0.84 * H), (0, 0, dims['hz'] + 0.25), 'chest')
+    bone('arm_L', (dims['sx'], 0, dims['sh']), (dims['sx'], 0, dims['hand_z']), 'chest')
+    bone('arm_R', (-dims['sx'], 0, dims['sh']), (-dims['sx'], 0, dims['hand_z']), 'chest')
+    bone('leg_L', (dims['lx'], 0, 0.46 * H), (dims['lx'], 0, 0.05), 'hips')
+    bone('leg_R', (-dims['lx'], 0, 0.46 * H), (-dims['lx'], 0, 0.05), 'hips')
+    bpy.ops.object.mode_set(mode='POSE')
+    for pb in obj.pose.bones:
+        pb.rotation_mode = 'XYZ'
+    return obj
+
+
+def forward_sign(obj, bname):
+    """+1 если положительный поворот по X кости двигает её конец вперёд (-Y)."""
+    pb = obj.pose.bones[bname]
+    bpy.context.view_layer.update()
+    t0 = (obj.matrix_world @ pb.tail).copy()
+    pb.rotation_euler = (0.4, 0, 0)
+    bpy.context.view_layer.update()
+    t1 = obj.matrix_world @ pb.tail
+    pb.rotation_euler = (0, 0, 0)
+    bpy.context.view_layer.update()
+    if bname == 'root':
+        # корень вертикальный: вперёд = конец уходит в -Y
+        return 1 if t1.y < t0.y else -1
+    return 1 if t1.y < t0.y else -1
+
+
+def make_actions(obj, weapon):
+    S = {b: forward_sign(obj, b) for b in BONES}
+    # "вперёд" для ног/рук, "наклон вперёд" для корпуса
+    melee = weapon in ('fists', 'gloves')
+
+    def act(name, length, keys, loc_keys=None, loop=True):
+        a = bpy.data.actions.new(name)
+        a.use_fake_user = True
+        obj.animation_data_create()
+        obj.animation_data.action = a
+        for pb in obj.pose.bones:
+            pb.rotation_euler = (0, 0, 0)
+            pb.location = (0, 0, 0)
+        for bname, frames in keys.items():
+            pb = obj.pose.bones[bname]
+            for f, rot in frames:
+                pb.rotation_euler = (rot[0] * S[bname], rot[1], rot[2])
+                pb.keyframe_insert('rotation_euler', frame=f)
+        for f, v in (loc_keys or []):
+            pb = obj.pose.bones['root']
+            pb.location = (0, v, 0)  # локальная Y корня = вверх
+            pb.keyframe_insert('location', frame=f)
+        for pb in obj.pose.bones:
+            if not any(fc for fc in iter_fcurves(a) if pb.name in fc.data_path):
+                pb.rotation_euler = (0, 0, 0)
+                pb.keyframe_insert('rotation_euler', frame=1)
+                pb.keyframe_insert('rotation_euler', frame=length)
+        return a
+
+    D = math.radians
+    L = 30
+    act('idle', L + 1, {
+        'chest': [(1, (D(0), 0, 0)), (16, (D(3), 0, 0)), (L + 1, (D(0), 0, 0))],
+        'head': [(1, (D(0), 0, 0)), (16, (D(-3), 0, 0)), (L + 1, (D(0), 0, 0))],
+        'arm_L': [(1, (D(4), 0, D(6))), (16, (D(8), 0, D(9))), (L + 1, (D(4), 0, D(6)))],
+        'arm_R': [(1, (D(4), 0, D(-6))), (16, (D(8), 0, D(-9))), (L + 1, (D(4), 0, D(-6)))],
+    }, [(1, 0), (16, -0.015), (L + 1, 0)])
+
+    R = 16
+    sw = D(38)
+    act('run', R + 1, {
+        'leg_L': [(1, (sw, 0, 0)), (9, (-sw, 0, 0)), (R + 1, (sw, 0, 0))],
+        'leg_R': [(1, (-sw, 0, 0)), (9, (sw, 0, 0)), (R + 1, (-sw, 0, 0))],
+        'arm_L': [(1, (-sw, 0, D(8))), (9, (sw, 0, D(8))), (R + 1, (-sw, 0, D(8)))],
+        'arm_R': [(1, (sw, 0, D(-8))), (9, (-sw, 0, D(-8))), (R + 1, (sw, 0, D(-8)))],
+        'chest': [(1, (D(10), D(6), 0)), (9, (D(10), D(-6), 0)), (R + 1, (D(10), D(6), 0))],
+        'hips': [(1, (0, D(-5), 0)), (9, (0, D(5), 0)), (R + 1, (0, D(-5), 0))],
+    }, [(1, 0), (5, 0.04), (9, 0), (13, 0.04), (R + 1, 0)])
+
+    if melee:
+        act('attack', 13, {
+            'arm_R': [(1, (D(0), 0, 0)), (3, (D(85), 0, D(15))), (6, (D(20), 0, 0)), (13, (0, 0, 0))],
+            'arm_L': [(1, (D(0), 0, 0)), (6, (D(0), 0, 0)), (9, (D(85), 0, D(-15))), (13, (0, 0, 0))],
+            'chest': [(1, (0, 0, 0)), (3, (D(8), D(-20), 0)), (9, (D(8), D(20), 0)), (13, (0, 0, 0))],
+        }, loop=False)
+    else:
+        both = weapon == 'pistols'
+        keys = {
+            'arm_R': [(1, (D(0), 0, 0)), (3, (D(85), 0, 0)), (9, (D(80), 0, 0)), (13, (0, 0, 0))],
+            'chest': [(1, (0, 0, 0)), (3, (D(-6), 0, 0)), (13, (0, 0, 0))],
+        }
+        if both:
+            keys['arm_L'] = [(1, (D(0), 0, 0)), (3, (D(85), 0, 0)), (9, (D(80), 0, 0)), (13, (0, 0, 0))]
+        if weapon == 'sign':
+            keys['arm_R'] = [(1, (D(0), 0, 0)), (3, (D(-40), 0, 0)), (6, (D(110), 0, 0)), (13, (0, 0, 0))]
+        act('attack', 13, keys, loop=False)
+
+    act('super', 19, {
+        'arm_L': [(1, (0, 0, 0)), (5, (D(-20), 0, D(40))), (10, (D(160), 0, D(20))), (19, (0, 0, 0))],
+        'arm_R': [(1, (0, 0, 0)), (5, (D(-20), 0, D(-40))), (10, (D(160), 0, D(-20))), (19, (0, 0, 0))],
+        'leg_L': [(1, (0, 0, 0)), (5, (D(30), 0, 0)), (10, (D(-10), 0, 0)), (19, (0, 0, 0))],
+        'leg_R': [(1, (0, 0, 0)), (5, (D(30), 0, 0)), (10, (D(-10), 0, 0)), (19, (0, 0, 0))],
+        'chest': [(1, (0, 0, 0)), (5, (D(20), 0, 0)), (10, (D(-15), 0, 0)), (19, (0, 0, 0))],
+    }, [(1, 0), (5, -0.08), (10, 0.25), (19, 0)], loop=False)
+
+    act('death', 25, {
+        'root': [(1, (0, 0, 0)), (12, (D(-95), 0, 0)), (25, (D(-90), 0, 0))],
+        'arm_L': [(1, (0, 0, 0)), (12, (D(-60), 0, D(50))), (25, (D(-70), 0, D(60)))],
+        'arm_R': [(1, (0, 0, 0)), (12, (D(-60), 0, D(-50))), (25, (D(-70), 0, D(-60)))],
+        'head': [(1, (0, 0, 0)), (25, (D(-20), 0, 0))],
+    }, [(1, 0), (8, 0.15), (25, 0.05)], loop=False)
+    obj.animation_data.action = bpy.data.actions['idle']
+
+
+def iter_fcurves(action):
+    # Blender 4.4+: слоёные действия
+    if hasattr(action, 'layers') and len(action.layers):
+        for layer in action.layers:
+            for strip in layer.strips:
+                for bag in strip.channelbags:
+                    yield from bag.fcurves
+    elif hasattr(action, 'fcurves'):
+        yield from action.fcurves
+
+
+def build(c):
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.context.scene.render.fps = FPS
+    B = Builder()
+    dims = build_body(B, c)
+    me = bpy.data.meshes.new(c['id'])
+    B.bm.to_mesh(me)
+    B.bm.free()
+    obj = bpy.data.objects.new(c['id'], me)
+    bpy.context.scene.collection.objects.link(obj)
+    for n in BONES:
+        obj.vertex_groups.new(name=n)
+    if me.color_attributes:
+        me.color_attributes.active_color = me.color_attributes[0]
+        me.color_attributes.render_color_index = 0
+    mat = bpy.data.materials.new(c['id'] + '_mat')
+    nt = mat.node_tree
+    bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    vc = nt.nodes.new('ShaderNodeVertexColor')
+    vc.layer_name = 'Color'
+    nt.links.new(vc.outputs['Color'], bsdf.inputs['Base Color'])
+    bsdf.inputs['Roughness'].default_value = 0.8
+    me.materials.append(mat)
+
+    rig = make_armature(c['id'], dims)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    obj.parent = rig
+    mod = obj.modifiers.new('Armature', 'ARMATURE')
+    mod.object = rig
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode='POSE')
+    make_actions(rig, c.get('weapon'))
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    tris = sum(len(p.vertices) - 2 for p in me.polygons)
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, c['id'] + '.glb')
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.export_scene.gltf(
+        filepath=path, export_format='GLB', use_selection=False,
+        export_animations=True, export_animation_mode='ACTIONS', export_skins=True,
+        export_vertex_color='ACTIVE', export_all_vertex_colors=False,
+        export_yup=True, export_apply=False, export_force_sampling=True, export_optimize_animation_size=False,
+        export_def_bones=False, export_leaf_bone=False, export_image_format='NONE', export_materials='EXPORT',
+    )
+    print(f'BUILT {c["id"]}: {tris} tris -> {path}')
+    return tris
+
+
+def main():
+    argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+    with open(os.path.join(HERE, 'characters.json'), encoding='utf-8') as f:
+        data = json.load(f)
+    for c in data['characters']:
+        if argv and c['id'] not in argv:
+            continue
+        tris = build(c)
+        if tris > 3000:
+            print(f'WARNING {c["id"]} has {tris} tris (> 3000)')
+
+
+main()

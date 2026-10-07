@@ -1,0 +1,99 @@
+{
+  "_help": "Внешность бойцов. id совпадает с shared/brawlers.ts. Цвета — hex. После правки: blender --background --python blender_tools/build_characters.py",
+  "_options": {
+    "build": "slim | normal | big",
+    "hair.style": "none | buzz | short | curly | crop",
+    "top.type": "tee | hoodie | zip | bomber | tracksuit | sweater | varsity",
+    "bottom.type": "jeans | flare | rolled | shorts | track",
+    "shoes.type": "runner | chunky | boots | retro",
+    "accessories": "chain | sunglasses | earring | watch",
+    "weapon": "pistols | sign | shotgun | shuriken | fists | gloves",
+    "emblem": "none | brand"
+  },
+  "characters": [
+    {
+      "id": "drip",
+      "height": 1.0,
+      "build": "slim",
+      "skin": "#f2c29b",
+      "hair": { "style": "crop", "color": "#f4e27a", "under": "#3a2a1c" },
+      "beard": null,
+      "top": { "type": "varsity", "color": "#6b2fb3", "sleeves": "#f5f5f5", "trim": "#ffb02e" },
+      "bottom": { "type": "flare", "color": "#8fb3e6" },
+      "shoes": { "type": "chunky", "color": "#ffffff", "accent": "#e53935", "sole": "#f0f0f0" },
+      "accessories": ["chain", "sunglasses"],
+      "weapon": "pistols",
+      "emblem": "none"
+    },
+    {
+      "id": "mrp",
+      "height": 1.0,
+      "build": "normal",
+      "skin": "#e9b48d",
+      "hair": { "style": "curly", "color": "#2b1d14" },
+      "beard": null,
+      "top": { "type": "sweater", "color": "#111111", "stripe": "#f4f4f4", "stripes": 7 },
+      "bottom": { "type": "flare", "color": "#3f63a8" },
+      "shoes": { "type": "chunky", "color": "#ffffff", "accent": "#d9d9d9", "sole": "#ffffff", "big": true },
+      "accessories": [],
+      "weapon": "sign",
+      "emblem": "none"
+    },
+    {
+      "id": "bubu",
+      "height": 1.08,
+      "build": "big",
+      "skin": "#e6ad85",
+      "hair": { "style": "buzz", "color": "#3b2a20" },
+      "beard": null,
+      "top": { "type": "tracksuit", "color": "#1f3f8f", "stripe": "#ffffff" },
+      "bottom": { "type": "track", "color": "#1f3f8f", "stripe": "#ffffff" },
+      "shoes": { "type": "runner", "color": "#f5f5f5", "accent": "#1f3f8f", "sole": "#ffffff" },
+      "accessories": ["chain"],
+      "weapon": "shotgun",
+      "emblem": "none"
+    },
+    {
+      "id": "leon",
+      "height": 1.0,
+      "build": "slim",
+      "skin": "#f0c3a0",
+      "hair": { "style": "none", "color": "#000000" },
+      "beard": null,
+      "top": { "type": "bomber", "color": "#4d5a2e", "trim": "#ff7a1a" },
+      "bottom": { "type": "rolled", "color": "#2f4f86", "cuff": "#6f8fc4" },
+      "shoes": { "type": "boots", "color": "#1a1a1a", "accent": "#f2d24a", "sole": "#222222" },
+      "accessories": ["earring"],
+      "weapon": "shuriken",
+      "emblem": "none"
+    },
+    {
+      "id": "iceberg",
+      "height": 1.02,
+      "build": "normal",
+      "skin": "#8a5a3c",
+      "hair": { "style": "short", "color": "#141010" },
+      "beard": null,
+      "top": { "type": "zip", "color": "#151515", "trim": "#9a9a9a" },
+      "bottom": { "type": "shorts", "color": "#8c8c8c" },
+      "shoes": { "type": "retro", "color": "#a7a9ad", "accent": "#d7d8da", "sole": "#f2efe6" },
+      "accessories": ["watch"],
+      "weapon": "fists",
+      "emblem": "none"
+    },
+    {
+      "id": "ali",
+      "height": 1.03,
+      "build": "big",
+      "skin": "#c98e63",
+      "hair": { "style": "short", "color": "#1b1310" },
+      "beard": { "color": "#1b1310" },
+      "top": { "type": "tee", "color": "#2a2a2e" },
+      "bottom": { "type": "jeans", "color": "#41639b" },
+      "shoes": { "type": "runner", "color": "#e8e8e8", "accent": "#2a2a2e", "sole": "#ffffff" },
+      "accessories": [],
+      "weapon": "gloves",
+      "emblem": "brand"
+    }
+  ]
+}
