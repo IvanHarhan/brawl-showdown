@@ -23,7 +23,7 @@ export type CanSnap = [number, number, number];
 /** События тика. Первый элемент — тип. */
 export type GameEvent =
   | ['shot', number, number, number]           // slot, angle×100, isSuper(0/1)
-  | ['hit', number, number, number, number]    // x, y, dmg, targetSlot(-1 если не игрок)
+  | ['hit', number, number, number, number, number]    // x, y, dmg, targetSlot(-1 если не игрок), угол удара×100 (9999 — нет)
   | ['box', number, number]                    // tileIndex, hp
   | ['tile', number, number]                   // tileIndex, newTile
   | ['die', number, number, number]            // slot, place, killerSlot(-1)

@@ -9,6 +9,7 @@ const tmpM = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
 const tmpS = new THREE.Vector3();
 const tmpP = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
 
 /** Блок стены: скруглённый куб с градиентом по высоте и светлой «крышкой». */
 function wallGeometry() {
@@ -32,13 +33,50 @@ function wallGeometry() {
   return mergeGeometries([shade(body, false), shade(cap, true)])!;
 }
 
+function colorize(g: THREE.BufferGeometry, fn: (y: number, ny: number) => THREE.Color) {
+  const pos = g.attributes.position, nrm = g.attributes.normal;
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const c = fn(pos.getY(i), nrm.getY(i));
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.deleteAttribute('uv');
+  return g;
+}
+
+/** Две бочки с обручами. */
+function barrelGeometry() {
+  const wood = new THREE.Color('#b0652e'), dark = new THREE.Color('#7a3f17'), lid = new THREE.Color('#c98a4b'), hoop = new THREE.Color('#4a4a52');
+  const parts: THREE.BufferGeometry[] = [];
+  for (const [bx, bz, s] of [[-0.2, -0.12, 1], [0.24, 0.18, 0.86]] as const) {
+    const body = new THREE.CylinderGeometry(0.27 * s, 0.24 * s, 0.95 * s, 14, 1).translate(bx, 0.475 * s, bz);
+    parts.push(colorize(body, (y, ny) => (ny > 0.5 ? lid : dark.clone().lerp(wood, Math.min(1, y / 0.6)))));
+    for (const hy of [0.18, 0.77]) {
+      const ring = new THREE.CylinderGeometry(0.28 * s, 0.28 * s, 0.07, 14, 1, true).translate(bx, hy * s, bz);
+      parts.push(colorize(ring, () => hoop));
+    }
+  }
+  return mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
+}
+
+/** Деревянный забор: два столба и три доски вдоль X. */
+function fenceGeometry() {
+  const post = new THREE.Color('#8a5a2b'), plank = new THREE.Color('#c88a4a'), top = new THREE.Color('#e0a865');
+  const parts: THREE.BufferGeometry[] = [];
+  for (const px of [-0.4, 0.4]) parts.push(colorize(new RoundedBoxGeometry(0.18, 1.1, 0.18, 1, 0.03).translate(px, 0.55, 0), (_y, ny) => (ny > 0.5 ? top : post)));
+  for (const py of [0.28, 0.58, 0.88]) parts.push(colorize(new RoundedBoxGeometry(1.02, 0.2, 0.1, 1, 0.03).translate(0, py, 0), (_y, ny) => (ny > 0.5 ? top : plank)));
+  return mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
+}
+
 function rnd(i: number) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 
 /** Пол, стены, кусты, вода, ящики. Повторяющееся — через InstancedMesh. */
 export class MapView {
   group = new THREE.Group();
-  walls!: THREE.InstancedMesh;
-  wallIndex = new Map<number, number>();
+  wallMeshes: { mesh: THREE.InstancedMesh; index: Map<number, number> }[] = [];
+  wallShadows!: THREE.InstancedMesh;
+  shadowIndex = new Map<number, number>();
   bushes!: THREE.InstancedMesh;
   bushIndex: { ti: number; x: number; y: number; s: number; rot: number }[] = [];
   boxes!: THREE.InstancedMesh;
@@ -74,6 +112,15 @@ export class MapView {
         }
       }
     }
+    // пол темнее у краёв карты
+    const edge = 3 * S;
+    for (const [x0, y0, x1, y1] of [[0, 0, edge, 0], [w * S, 0, w * S - edge, 0], [0, 0, 0, edge], [0, h * S, 0, h * S - edge]]) {
+      const lg = g.createLinearGradient(x0, y0, x1, y1);
+      lg.addColorStop(0, 'rgba(90,60,20,0.35)');
+      lg.addColorStop(1, 'rgba(90,60,20,0)');
+      g.fillStyle = lg;
+      g.fillRect(0, 0, w * S, h * S);
+    }
     // край карты
     g.strokeStyle = '#7a5a2e'; g.lineWidth = 4; g.strokeRect(2, 2, w * S - 4, h * S - 4);
     const tex = new THREE.CanvasTexture(cv);
@@ -104,26 +151,76 @@ export class MapView {
     this.group.add(rim, instancedOutline(rim));
   }
 
+  /** Стены трёх видов (камень, бочки, забор): вид выбирается на весь связный кусок стены. Плюс мягкие тени на пол. */
   private buildWalls() {
-    const { w, tiles } = this.map;
+    const { w, h, tiles } = this.map;
     const list: number[] = [];
     tiles.forEach((t, i) => { if (t === Tile.Wall) list.push(i); });
-    const geo = wallGeometry();
-    const mat = toonMaterial({ vertexColors: true });
-    this.walls = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
-    this.walls.count = list.length;
-    list.forEach((ti, k) => {
-      const x = ti % w, y = Math.floor(ti / w);
-      this.walls.setMatrixAt(k, tmpM.makeTranslation(x + 0.5, 0, y + 0.5));
-      const v = 0.88 + rnd(ti) * 0.18;
-      this.walls.setColorAt(k, new THREE.Color(v, v, v));
-      this.wallIndex.set(ti, k);
+    // связные группы стен
+    const group = new Map<number, number>();
+    for (const ti of list) {
+      if (group.has(ti)) continue;
+      const stack = [ti];
+      group.set(ti, ti);
+      while (stack.length) {
+        const cur = stack.pop()!;
+        const cx = cur % w, cy = Math.floor(cur / w);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const ni = ny * w + nx;
+          if (tiles[ni] === Tile.Wall && !group.has(ni)) { group.set(ni, ti); stack.push(ni); }
+        }
+      }
+    }
+    const variantOf = (ti: number) => {
+      const root = group.get(ti)!;
+      // симметричная карта: вид зависит от размера и положения группы относительно центра
+      const rx = Math.abs((root % w) + 0.5 - w / 2), ry = Math.abs(Math.floor(root / w) + 0.5 - h / 2);
+      return Math.floor(rnd(Math.round(Math.min(rx, ry) * 7 + Math.max(rx, ry) * 13)) * 3);
+    };
+    const geos = [wallGeometry(), barrelGeometry(), fenceGeometry()];
+    const per: number[][] = [[], [], []];
+    for (const ti of list) per[variantOf(ti)].push(ti);
+    this.wallMeshes = per.map((tis, v) => {
+      const mesh = new THREE.InstancedMesh(geos[v], toonMaterial({ vertexColors: true }), Math.max(1, tis.length));
+      mesh.count = tis.length;
+      const index = new Map<number, number>();
+      tis.forEach((ti, k) => {
+        const x = ti % w, y = Math.floor(ti / w);
+        // забор вдоль линии стены
+        const horiz = tiles[ti - 1] === Tile.Wall || tiles[ti + 1] === Tile.Wall;
+        tmpQ.setFromAxisAngle(UP, v === 2 && !horiz ? Math.PI / 2 : v === 1 ? rnd(ti) * 6.28 : 0);
+        tmpP.set(x + 0.5, 0, y + 0.5);
+        tmpS.set(1, v === 0 ? 0.92 + rnd(ti) * 0.16 : 1, 1);
+        mesh.setMatrixAt(k, tmpM.compose(tmpP, tmpQ, tmpS));
+        const s = 0.9 + rnd(ti + 7) * 0.15;
+        mesh.setColorAt(k, new THREE.Color(s, s, s));
+        index.set(ti, k);
+      });
+      const o = instancedOutline(mesh);
+      o.count = tis.length;
+      this.group.add(mesh, o);
+      return { mesh, index };
     });
-    const o = instancedOutline(this.walls);
-    o.count = list.length;
-    this.group.add(this.walls, o);
+    // тени: тёмные пятна со сдвигом от солнца
+    const sc = document.createElement('canvas');
+    sc.width = sc.height = 64;
+    const sg = sc.getContext('2d')!;
+    const gr = sg.createRadialGradient(32, 32, 10, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(40,20,60,0.42)');
+    gr.addColorStop(1, 'rgba(40,20,60,0)');
+    sg.fillStyle = gr; sg.fillRect(0, 0, 64, 64);
+    const shadowGeo = new THREE.PlaneGeometry(1.7, 1.7).rotateX(-Math.PI / 2);
+    this.wallShadows = new THREE.InstancedMesh(shadowGeo, new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), transparent: true, depthWrite: false }), Math.max(1, list.length));
+    this.wallShadows.count = list.length;
+    list.forEach((ti, k) => {
+      this.wallShadows.setMatrixAt(k, tmpM.makeTranslation(ti % w + 0.5 + 0.35, 0.01, Math.floor(ti / w) + 0.5 + 0.3));
+      this.shadowIndex.set(ti, k);
+    });
+    this.wallShadows.renderOrder = 0;
+    this.group.add(this.wallShadows);
   }
-
   private buildBushes() {
     const { w, tiles } = this.map;
     const parts: THREE.BufferGeometry[] = [];
@@ -179,8 +276,10 @@ export class MapView {
       paint(new THREE.BoxGeometry(0.92, 0.1, 0.92).translate(0, 0.05, 0).toNonIndexed(), '#7a4a1f'),
       paint(new THREE.BoxGeometry(0.1, 0.8, 0.92).translate(0.41, 0.4, 0).toNonIndexed(), '#8a5524'),
       paint(new THREE.BoxGeometry(0.1, 0.8, 0.92).translate(-0.41, 0.4, 0).toNonIndexed(), '#8a5524'),
-      // значок банки сверху
-      paint(new THREE.CylinderGeometry(0.13, 0.13, 0.06, 10).translate(0, 0.83, 0).toNonIndexed(), '#36e07a'),
+      // значок сверху — маленькая банка
+      paint(new THREE.CylinderGeometry(0.12, 0.12, 0.26, 12).translate(0, 0.94, 0).toNonIndexed(), '#36e07a'),
+      paint(new THREE.CylinderGeometry(0.125, 0.125, 0.07, 12).translate(0, 0.93, 0).toNonIndexed(), '#1b1b1b'),
+      paint(new THREE.CylinderGeometry(0.1, 0.12, 0.04, 12).translate(0, 1.09, 0).toNonIndexed(), '#d8d8d8'),
     ];
     const geo = mergeGeometries(parts)!;
     const list: number[] = [];
@@ -253,11 +352,18 @@ export class MapView {
     this.group.add(this.water);
   }
   removeTile(ti: number) {
-    const wk = this.wallIndex.get(ti);
-    if (wk !== undefined) {
-      this.walls.setMatrixAt(wk, HIDDEN);
-      this.walls.instanceMatrix.needsUpdate = true;
-      this.wallIndex.delete(ti);
+    for (const wm of this.wallMeshes) {
+      const wk = wm.index.get(ti);
+      if (wk === undefined) continue;
+      wm.mesh.setMatrixAt(wk, HIDDEN);
+      wm.mesh.instanceMatrix.needsUpdate = true;
+      wm.index.delete(ti);
+    }
+    const sk = this.shadowIndex.get(ti);
+    if (sk !== undefined) {
+      this.wallShadows.setMatrixAt(sk, HIDDEN);
+      this.wallShadows.instanceMatrix.needsUpdate = true;
+      this.shadowIndex.delete(ti);
     }
     const bk = this.boxIndex.get(ti);
     if (bk !== undefined) {

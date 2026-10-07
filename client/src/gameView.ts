@@ -9,7 +9,7 @@ import { Audio } from './audio';
 import { getBrawler, superAimType, superRange, Brawler } from '../../shared/brawlers';
 import { F_ALIVE, F_BUSH, F_INVIS, F_OFFLINE, F_AIR, GameEvent, StartMsg, Snapshot } from '../../shared/protocol';
 import { Tile, lineOfFire, tileAt } from '../../shared/map';
-import { TICK_DT } from '../../shared/constants';
+import { TICK_DT, BOX_HP } from '../../shared/constants';
 
 const TILT = (55 * Math.PI) / 180;
 
@@ -51,6 +51,14 @@ export class GameView {
   private auto = { nextThink: 0, mx: 0, my: 0, stuck: 0, lx: 0, ly: 0, turn: 1 };
   stats = { frames: 0, snaps: 0, maxJump: 0, jumps: [] as number[] };
   history = new Map<number, number[][]>();
+  private nudges = new Map<number, { x: number; y: number }>();
+  private gasPending = new Set<number>();
+  private boxBars = new Map<number, { hp: number; until: number }>();
+  private boxBarEls = new Map<number, HTMLElement>();
+  private killBadge = new Map<number, number>();
+  private slowUntil = 0;
+  private superRing: THREE.Mesh | null = null;
+  private canBorn = new Map<number, number>();
   private lastRender = { x: 0, y: 0, has: false };
   private seenPos = new Map<number, { x: number; y: number; until: number }>();
 
@@ -239,9 +247,17 @@ export class GameView {
         break;
       }
       case 'hit': {
-        const [, x100, y100, dmg, target] = e;
+        const [, x100, y100, dmg, target, ang] = e;
         const x = x100 / 100, y = y100 / 100;
         const isMe = target === w.you;
+        const gasHit = this.gasPending.delete(target);
+        if (gasHit) { this.damageNumber(x, y, dmg, 'gasdmg'); break; }
+        if (target >= 0 && ang !== 9999) {
+          // лёгкий визуальный отброс в сторону удара
+          const n = this.nudges.get(target) ?? { x: 0, y: 0 };
+          n.x += Math.cos(ang / 100) * 0.22; n.y += Math.sin(ang / 100) * 0.22;
+          this.nudges.set(target, n);
+        }
         if (target >= 0) {
           this.chars.get(target)?.flash(now);
           this.fx.impact(x, y, isMe ? 0xff4d4d : 0xffe08a, now, dmg > 700);
@@ -256,6 +272,7 @@ export class GameView {
         const [, ti] = e;
         this.mapView.hitBox(ti, now);
         const x = ti % w.map.w + 0.5, y = Math.floor(ti / w.map.w) + 0.5;
+        this.boxBars.set(ti, { hp: e[2], until: now + 3000 });
         this.fx.burst(x, 0.6, y, 0xb57a35, 3, 2, 2);
         this.audio.sfx('box', near(x, y) * 0.8);
         break;
@@ -265,6 +282,8 @@ export class GameView {
         const x = ti % w.map.w + 0.5, y = Math.floor(ti / w.map.w) + 0.5;
         const wasBox = this.mapView.boxIndex.has(ti);
         this.mapView.removeTile(ti);
+        this.boxBars.set(ti, { hp: 0, until: 0 });
+        if (wasBox) this.fx.splinters(x, y);
         this.fx.burst(x, 0.5, y, wasBox ? 0xb57a35 : 0x9a6fe0, 16, 4, 4);
         this.fx.smoke(x, 0.4, y, 6, 1.1, wasBox ? 0xe0cfa8 : 0xd8c8f0, 0.7, 0.9, 1.1);
         this.audio.sfx('boxbreak', near(x, y));
@@ -273,6 +292,8 @@ export class GameView {
       case 'die': {
         const [, slot, place, killer] = e;
         this.killFeed(slot, killer);
+        if (killer >= 0) this.killBadge.set(killer, now + 2200);
+        if (slot === w.you || killer === w.you) this.slowUntil = now + 300;
         const cv = this.chars.get(slot);
         if (cv) { const p = cv.root.position; this.fx.burst(p.x, 0.8, p.z, 0xffffff, 18, 4, 5); this.fx.ring(p.x, p.z, 1.6, 0xffffff); this.fx.smoke(p.x, 0.5, p.z, 8, 1.3, 0xcfc8d8, 0.9, 1.2, 1.4); }
         const r = w.rosterOf(slot);
@@ -325,6 +346,7 @@ export class GameView {
         break;
       }
       case 'gas': {
+        this.gasPending.add(e[1]);
         if (e[1] === w.you) { this.audio.sfx('gas'); this.shake = Math.max(this.shake, 0.08); }
         break;
       }
@@ -367,6 +389,8 @@ export class GameView {
     if (now - this.pingAt > 2000) { this.pingAt = now; this.room.send('ping', now); }
 
     this.handleEvents(now);
+    // замедление на смерти: только картинка, сеть идёт как обычно
+    const vdt = now < this.slowUntil ? dt * 0.3 : dt;
 
     // игроки
     const views = w.players(now);
@@ -379,7 +403,7 @@ export class GameView {
         if (!w.locked) { v.x = p.x; v.y = p.y; v.moving = w.movingRecently(now); v.facing = w.myFacing; }
         if (meSnap) { v.ammo = meSnap[6] / 100; v.sup = meSnap[7] / 100; v.hp = meSnap[3]; v.maxHp = meSnap[4]; v.cans = meSnap[5]; }
       }
-      this.updateChar(v, dt, now);
+      this.updateChar(v, vdt, now);
     }
     for (const [slot, cv] of this.chars) {
       if (!seen.has(slot)) { cv.root.visible = false; this.tags.get(slot)?.el.classList.add('hidden'); }
@@ -400,7 +424,10 @@ export class GameView {
       if (Math.hypot(px - this.camTarget.x, py - this.camTarget.z) < 16) this.fx.smoke(px, 0.4, py, 1, 1.8, 0x8fe060, 0.4, 0.35, 2.2);
     }
     this.mapView.update(now);
-    this.fx.update(dt, now);
+    this.fx.update(vdt, now);
+    this.updateSuperRing(meSnap, now);
+    this.updateBoxBars(now);
+    if (this.introAt && now - this.introAt > 10000) this.hud.querySelector('.pchint')?.classList.add('hidden');
 
     // камера
     const meV = views.find((v) => v.slot === w.you);
@@ -463,7 +490,9 @@ export class GameView {
     const alive = (v.flags & F_ALIVE) !== 0;
     cv.root.visible = true;
     cv.root.scale.setScalar(1.35);
-    cv.root.position.set(v.x, (v.flags & F_AIR) ? 0.9 : 0, v.y);
+    const nd = this.nudges.get(v.slot);
+    if (nd) { const d = Math.exp(-dt * 12); nd.x *= d; nd.y *= d; }
+    cv.root.position.set(v.x + (nd?.x ?? 0), (v.flags & F_AIR) ? 0.9 : 0, v.y + (nd?.y ?? 0));
     cv.root.rotation.y = Math.PI / 2 - v.facing;
     const isMe = v.slot === w.you;
     let op = 1;
@@ -489,7 +518,7 @@ export class GameView {
       const r = this.world.rosterOf(v.slot);
       const el = document.createElement('div');
       el.className = 'tag3d' + (isMe ? ' me' : '');
-      el.innerHTML = `<div class="nm"></div><div class="hpb"><div class="hpf"></div><div class="hpt"></div></div>${isMe ? '<div class="ammo"><i><b></b></i><i><b></b></i><i><b></b></i></div>' : ''}<div class="cans">0</div>`;
+      el.innerHTML = `<div class="nm"></div><div class="hpb"><div class="hpf"></div><div class="hpt"></div></div>${isMe ? '<div class="ammo"><i><b></b></i><i><b></b></i><i><b></b></i></div>' : ''}<div class="cans">0</div><div class="kb">💀 ВЫБИЛ!</div>`;
       (el.querySelector('.nm') as HTMLElement).textContent = r ? r.name : '?';
       this.tagLayer.appendChild(el);
       t = { el, hpf: el.querySelector('.hpf')!, hpt: el.querySelector('.hpt')!, cans: el.querySelector('.cans')!, ammo: el.querySelector('.ammo'), last: '' };
@@ -502,6 +531,7 @@ export class GameView {
     const k = Math.min(1.8, Math.max(1, innerHeight / 480));
     t.el.style.transform = `translate(${sx - 31 * k}px, ${sy - 44 * k}px) scale(${k})`;
     t.el.style.opacity = v.flags & F_OFFLINE ? '0.5' : '1';
+    t.el.classList.toggle('killer', performance.now() < (this.killBadge.get(v.slot) ?? 0));
     const key = `${v.hp}|${v.maxHp}|${v.cans}|${isMe ? Math.round(v.ammo * 20) : 0}`;
     if (key !== t.last) {
       t.last = key;
@@ -548,16 +578,54 @@ export class GameView {
     }
   }
 
+  private updateSuperRing(me: ReturnType<ClientWorld['meLatest']>, now: number) {
+    const ready = !!me && me[7] >= 100 && this.world.alive && !this.dead;
+    if (!this.superRing) {
+      this.superRing = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.78, 40), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+      this.superRing.rotation.x = -Math.PI / 2;
+      this.scene.add(this.superRing);
+    }
+    const r = this.superRing;
+    r.visible = ready;
+    if (!ready) return;
+    const cv = this.chars.get(this.world.you);
+    if (cv) r.position.set(cv.root.position.x, 0.05, cv.root.position.z);
+    const pulse = 1 + Math.sin(now / 140) * 0.08;
+    r.scale.set(pulse, pulse, pulse);
+    (r.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(now / 140) * 0.25;
+  }
+
+  private updateBoxBars(now: number) {
+    const w = this.world;
+    for (const [ti, b] of this.boxBars) {
+      let el = this.boxBarEls.get(ti);
+      if (now > b.until || b.hp <= 0) { el?.remove(); this.boxBarEls.delete(ti); this.boxBars.delete(ti); continue; }
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'boxbar';
+        el.innerHTML = '<i></i>';
+        this.tagLayer.appendChild(el);
+        this.boxBarEls.set(ti, el);
+      }
+      this.v3.set(ti % w.map.w + 0.5, 1.25, Math.floor(ti / w.map.w) + 0.5).project(this.camera);
+      el.style.transform = `translate(${(this.v3.x * 0.5 + 0.5) * innerWidth - 24}px, ${(-this.v3.y * 0.5 + 0.5) * innerHeight}px)`;
+      (el.firstElementChild as HTMLElement).style.width = `${Math.max(0, b.hp / BOX_HP) * 100}%`;
+    }
+  }
+
   private updateCans(now: number) {
     const seen = new Set<number>();
     for (const [id, x100, y100] of this.world.cans(now)) {
       seen.add(id);
       let o = this.canMeshes.get(id);
-      if (!o) { o = makeCanMesh(); this.canMeshes.set(id, o); this.scene.add(o); }
-      o.position.set(x100 / 100, 0.35 + Math.sin(now / 250 + id) * 0.08, y100 / 100);
+      if (!o) { o = makeCanMesh(); this.canMeshes.set(id, o); this.scene.add(o); this.canBorn.set(id, now); }
+      // выпавшая банка подпрыгивает пару раз
+      const age = (now - (this.canBorn.get(id) ?? 0)) / 700;
+      const bounce = age < 1 ? Math.abs(Math.sin(age * Math.PI * 2)) * 0.9 * (1 - age) : 0;
+      o.position.set(x100 / 100, 0.35 + bounce + Math.sin(now / 250 + id) * 0.08, y100 / 100);
       o.rotation.y = now / 600 + id;
     }
-    for (const [id, o] of this.canMeshes) if (!seen.has(id)) { o.removeFromParent(); this.canMeshes.delete(id); }
+    for (const [id, o] of this.canMeshes) if (!seen.has(id)) { o.removeFromParent(); this.canMeshes.delete(id); this.canBorn.delete(id); }
   }
 
   private updateAim(now: number) {
@@ -598,7 +666,10 @@ export class GameView {
     const left = Math.ceil(this.world.gasStart - info.el);
     gasP.textContent = left > 0 ? `☁ газ через ${left}` : '☁ газ сжимается';
     gasP.classList.toggle('gaswarn', left <= 0);
-    (this.hud.querySelector('#ping') as HTMLElement).textContent = this.ping ? `${Math.round(this.ping)} мс` : '';
+    const pingEl = this.hud.querySelector('#ping') as HTMLElement;
+    const pg = Math.round(this.ping);
+    pingEl.textContent = pg ? `📶 ${pg} мс` : '📶 …';
+    pingEl.className = 'ping ' + (!pg ? '' : pg < 70 ? 'good' : pg < 140 ? 'mid' : 'bad');
     const sup = this.hud.querySelector('#supZone') as HTMLElement;
     const charge = me ? me[7] / 100 : 0;
     sup.classList.toggle('ready', charge >= 1);

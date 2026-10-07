@@ -231,6 +231,12 @@ export class Fx {
     this.smoke(x, 0.7, y, strong ? 2 : 1, 0.55, 0xffffff, 0.2, 0.6, 0.45);
   }
 
+  /** Щепки разбитого ящика. */
+  splinters(x: number, y: number) {
+    this.burst(x, 0.5, y, 0x7a4a1f, 12, 5, 5);
+    this.burst(x, 0.6, y, 0xd39a4f, 10, 4, 6);
+  }
+
   hitMarker(x: number, y: number, now: number, big: boolean) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.hitTex, color: big ? 0xffe14d : 0xffffff, depthTest: false, transparent: true }));
     s.position.set(x, 1.0, y);

@@ -98,7 +98,7 @@ export class CharacterView {
     if (name === 'attack') this.kick = 1; else this.hop = 1;
   }
 
-  flash(now: number) { this.flashUntil = now + 90; }
+  flash(now: number) { this.flashUntil = now + 50; }
 
   update(dt: number, now: number, moving: boolean, dead: boolean) {
     if (dead) this.play('death', 0.1);

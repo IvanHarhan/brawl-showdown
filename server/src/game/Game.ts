@@ -313,7 +313,7 @@ export class Game {
 
   // ---------- урон ----------
 
-  damagePlayer(t: Player, amount: number, src: Player | null, chargesSuper: boolean) {
+  damagePlayer(t: Player, amount: number, src: Player | null, chargesSuper: boolean, angle = NaN) {
     if (!t.alive || amount <= 0) return;
     if (t.forced && (t.forced.kind === 'jump')) return; // в прыжке не попасть
     const dmg = Math.round(amount);
@@ -321,7 +321,7 @@ export class Game {
     t.lastCombat = this.time;
     t.lastHurt = this.time;
     if (this.inBush(t)) t.revealUntil = Math.max(t.revealUntil, this.time + 0.5);
-    this.events.push(['hit', r100(t.x), r100(t.y), dmg, t.slot]);
+    this.events.push(['hit', r100(t.x), r100(t.y), dmg, t.slot, Number.isFinite(angle) ? r100(angle) : 9999]);
     if (src && src !== t && chargesSuper) src.superCharge = Math.min(1, src.superCharge + dmg / src.brawler.superCharge);
     if (src && src !== t) src.lastCombat = this.time;
     if (t.hp <= 0) this.kill(t, src);
@@ -330,7 +330,7 @@ export class Game {
   damageMinion(m: Minion, amount: number, src: Player | null, chargesSuper: boolean) {
     const dmg = Math.round(amount);
     m.hp -= dmg;
-    this.events.push(['hit', r100(m.x), r100(m.y), dmg, -1]);
+    this.events.push(['hit', r100(m.x), r100(m.y), dmg, -1, 9999]);
     if (src && chargesSuper) src.superCharge = Math.min(1, src.superCharge + (dmg * 0.5) / src.brawler.superCharge);
   }
 
@@ -339,7 +339,7 @@ export class Game {
     if (hp === undefined) return;
     const left = hp - Math.round(amount);
     const x = ti % this.map.w, y = Math.floor(ti / this.map.w);
-    this.events.push(['hit', r100(x + 0.5), r100(y + 0.5), Math.round(amount), -1]);
+    this.events.push(['hit', r100(x + 0.5), r100(y + 0.5), Math.round(amount), -1, 9999]);
     if (left <= 0) {
       this.boxHp.delete(ti);
       setTile(this.map, x, y, Tile.Floor);
@@ -396,6 +396,9 @@ export class Game {
     this.pickups();
     this.checkWin();
   }
+
+  /** Сразу обработать пришедший ввод (атака не ждёт следующего тика). */
+  processNow(p: Player) { if (this.started && !this.ended && !p.bot) this.processQueue(p, 0); }
 
   private processQueue(p: Player, dt: number) {
     p.budget = Math.min(0.35, p.budget + dt);
@@ -457,7 +460,7 @@ export class Game {
           if (f.hit.has(o.slot) || (o.forced && o.forced.kind === 'jump')) continue;
           f.hit.add(o.slot);
           if (f.kind === 'charge' && s.kind === 'charge') {
-            this.damagePlayer(o, s.damage * this.dmgMult(p), p, false);
+            this.damagePlayer(o, s.damage * this.dmgMult(p), p, false, Math.atan2(f.dy, f.dx));
             if (o.alive) o.forced = { kind: 'knock', vx: f.dx * 9, vy: f.dy * 9, left: s.knockback / 9 };
             p.forced = null;
           } else if (s.kind === 'grab') {
@@ -507,8 +510,8 @@ export class Game {
                   if (Math.hypot(tx + 0.5 - p.x, ty + 0.5 - p.y) <= s.radius) this.breakWall(tx, ty);
             }
             for (const o of this.enemiesNear(p.x, p.y, s.radius + PLAYER_RADIUS, p.slot)) {
-              this.damagePlayer(o, s.damage * this.dmgMult(p), p, false);
               const a = Math.atan2(o.y - p.y, o.x - p.x);
+              this.damagePlayer(o, s.damage * this.dmgMult(p), p, false, a);
               if (o.alive && !o.forced) o.forced = { kind: 'knock', vx: Math.cos(a) * 8, vy: Math.sin(a) * 8, left: 0.12 };
             }
             for (const m of this.minions) if (m.owner !== p.slot && Math.hypot(m.x - p.x, m.y - p.y) < s.radius) this.damageMinion(m, s.damage, p, false);
@@ -554,7 +557,7 @@ export class Game {
       for (const o of this.players) {
         if (!o.alive || o.slot === pr.owner || (o.forced && o.forced.kind === 'jump')) continue;
         if ((o.x - pr.x) ** 2 + (o.y - pr.y) ** 2 < (PLAYER_RADIUS + pr.radius) ** 2) {
-          this.damagePlayer(o, pr.damage * this.falloff(pr), owner ?? null, pr.chargesSuper);
+          this.damagePlayer(o, pr.damage * this.falloff(pr), owner ?? null, pr.chargesSuper, Math.atan2(pr.dy, pr.dx));
           return false;
         }
       }
@@ -581,7 +584,7 @@ export class Game {
     const b = pr.bouncer!;
     this.events.push(['boom', r100(x), r100(y), r100(b.splashR)]);
     const owner = this.players[pr.owner] ?? null;
-    for (const o of this.enemiesNear(x, y, b.splashR + PLAYER_RADIUS, pr.owner)) this.damagePlayer(o, b.splashDmg, owner, pr.chargesSuper);
+    for (const o of this.enemiesNear(x, y, b.splashR + PLAYER_RADIUS, pr.owner)) this.damagePlayer(o, b.splashDmg, owner, pr.chargesSuper, Math.atan2(o.y - y, o.x - x));
     for (const m of this.minions) if (m.owner !== pr.owner && Math.hypot(m.x - x, m.y - y) < b.splashR) this.damageMinion(m, b.splashDmg, owner, pr.chargesSuper);
   }
 
@@ -619,7 +622,7 @@ export class Game {
           else if (this.time >= m.nextAttack) {
             m.nextAttack = this.time + mm.attackInterval;
             const owner = this.players[m.owner];
-            this.damagePlayer(best, mm.damage * (owner ? this.dmgMult(owner) : 1), owner ?? null, true);
+            this.damagePlayer(best, mm.damage * (owner ? this.dmgMult(owner) : 1), owner ?? null, true, Math.atan2(best.y - m.y, best.x - m.x));
           }
         }
       }
@@ -650,6 +653,14 @@ export class Game {
     if (!this.cans.length) return;
     this.cans = this.cans.filter((c) => {
       if (this.time < c.readyAt) return true;
+      // банка притягивается к ближайшему живому игроку
+      let near: Player | null = null, nd = 1.7;
+      for (const p of this.players) {
+        if (!p.alive) continue;
+        const d = Math.hypot(p.x - c.x, p.y - c.y);
+        if (d < nd) { nd = d; near = p; }
+      }
+      if (near && nd > 0.05) { const st = Math.min(nd, 7 * TICK_DT); c.x += ((near.x - c.x) / nd) * st; c.y += ((near.y - c.y) / nd) * st; }
       for (const p of this.players) {
         if (!p.alive || (p.forced && p.forced.kind !== 'knock')) continue;
         if ((p.x - c.x) ** 2 + (p.y - c.y) ** 2 < CAN_PICKUP_RADIUS ** 2) {

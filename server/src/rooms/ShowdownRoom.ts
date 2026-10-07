@@ -63,11 +63,11 @@ export class ShowdownRoom extends Room {
     });
     this.onMessage('atk', (client, msg: { a: number }) => {
       const p = this.bySid.get(client.sessionId);
-      if (p && this.game && !p.bot) this.game.queueAttack(p, +msg?.a);
+      if (p && this.game && !p.bot) { this.game.queueAttack(p, +msg?.a); this.game.processNow(p); }
     });
     this.onMessage('sup', (client, msg: { a: number; d: number }) => {
       const p = this.bySid.get(client.sessionId);
-      if (p && this.game && !p.bot) this.game.queueSuper(p, +msg?.a, +msg?.d);
+      if (p && this.game && !p.bot) { this.game.queueSuper(p, +msg?.a, +msg?.d); this.game.processNow(p); }
     });
     this.onMessage('ping', (client, t: number) => client.send('pong', t));
 
