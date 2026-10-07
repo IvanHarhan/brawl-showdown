@@ -1,4 +1,4 @@
-export const TICK_RATE = 20;
+export const TICK_RATE = 30;
 export const TICK_DT = 1 / TICK_RATE;
 export const MAX_PLAYERS = 10;
 
@@ -17,4 +17,4 @@ export const GAS_MIN_HALF = 3.5;       // половина стороны без
 export const GAS_DAMAGE = 1000;        // урон в секунду
 
 export const RECONNECT_SECONDS = 20;
-export const INTERP_DELAY_MS = 100;
+export const INTERP_DELAY_MS = 70;

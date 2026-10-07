@@ -706,7 +706,7 @@ export class Game {
       if (this.time < o.revealUntil) flags |= F_REVEALED;
       p.push([o.slot, r100(o.x), r100(o.y), Math.ceil(o.hp), this.maxHp(o), o.cans, r100(o.ammo), r100(o.superCharge), flags, r100(o.facing)]);
     }
-    const pr: ProjSnap[] = this.projectiles.map((q) => [q.id, q.look, r100(q.x), r100(q.y), r100(Math.atan2(q.dy, q.dx))]);
+    const pr: ProjSnap[] = this.projectiles.map((q) => [q.id, q.look, r100(q.x), r100(q.y), r100(Math.atan2(q.dy, q.dx)), Math.round(q.speed * 10), q.owner]);
     const mn: MinionSnap[] = this.minions.map((m) => [m.id, m.type, r100(m.x), r100(m.y), Math.ceil(m.hp), m.maxHp, m.owner, r100(m.facing)]);
     const c: CanSnap[] = this.cans.map((k) => [k.id, r100(k.x), r100(k.y)]);
     return {

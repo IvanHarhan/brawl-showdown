@@ -35,6 +35,22 @@ function signTexture() {
 
 let glowTex: THREE.Texture | null = null;
 
+function smokeTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  for (let i = 0; i < 6; i++) {
+    const x = 22 + Math.random() * 20, y = 22 + Math.random() * 20, r = 14 + Math.random() * 10;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(255,255,255,0.55)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** Снаряды по виду (look) из снапшотов. */
 export class ProjectileViews {
   group = new THREE.Group();
@@ -142,6 +158,8 @@ export class Fx {
   private flashes: { s: THREE.Sprite; until: number; start: number }[] = [];
   private rings: { m: THREE.Mesh; t: number; dur: number; r: number }[] = [];
   private markers: { s: THREE.Sprite; until: number }[] = [];
+  private puffs: { s: THREE.Sprite; t: number; dur: number; vx: number; vy: number; vz: number; s0: number; s1: number; a0: number }[] = [];
+  private smokeTex = smokeTexture();
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private hitTex: THREE.Texture;
@@ -192,6 +210,27 @@ export class Fx {
     this.rings.push({ m, t: 0, dur, r });
   }
 
+  /** Клубы дыма: растут, поднимаются и тают. */
+  smoke(x: number, y: number, z: number, n: number, size = 0.8, color = 0xd8d0c0, spread = 0.5, up = 0.8, dur = 0.9) {
+    for (let i = 0; i < n; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, color, transparent: true, depthWrite: false, rotation: Math.random() * 6.28 }));
+      const a = Math.random() * Math.PI * 2, r = Math.random() * spread;
+      s.position.set(x + Math.cos(a) * r, y + Math.random() * 0.2, z + Math.sin(a) * r);
+      const s0 = size * (0.5 + Math.random() * 0.4);
+      s.scale.set(s0, s0, 1);
+      this.group.add(s);
+      this.puffs.push({ s, t: 0, dur: dur * (0.7 + Math.random() * 0.6), vx: Math.cos(a) * spread * 0.8, vy: up * (0.6 + Math.random() * 0.6), vz: Math.sin(a) * spread * 0.8, s0, s1: s0 * 2.2, a0: 0.75 });
+    }
+  }
+
+  /** Попадание: вспышка, искры, маленькое кольцо и дымок. */
+  impact(x: number, y: number, color: number, now: number, strong = false) {
+    this.flash(x, 0.8, y, 0xffffff, strong ? 1.3 : 0.9, now, 90);
+    this.burst(x, 0.8, y, color, strong ? 8 : 5, 3.5, 2.5);
+    this.ring(x, y, strong ? 0.9 : 0.6, 0xffffff, 0.22);
+    this.smoke(x, 0.7, y, strong ? 2 : 1, 0.55, 0xffffff, 0.2, 0.6, 0.45);
+  }
+
   hitMarker(x: number, y: number, now: number, big: boolean) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.hitTex, color: big ? 0xffe14d : 0xffffff, depthTest: false, transparent: true }));
     s.position.set(x, 1.0, y);
@@ -203,6 +242,17 @@ export class Fx {
   }
 
   update(dt: number, now: number) {
+    this.puffs = this.puffs.filter((p) => {
+      p.t += dt;
+      const k = p.t / p.dur;
+      if (k >= 1) { p.s.removeFromParent(); p.s.material.dispose(); return false; }
+      p.s.position.x += p.vx * dt; p.s.position.y += p.vy * dt; p.s.position.z += p.vz * dt;
+      p.vx *= 0.94; p.vz *= 0.94;
+      const sc = p.s0 + (p.s1 - p.s0) * (1 - (1 - k) * (1 - k));
+      p.s.scale.set(sc, sc, 1);
+      p.s.material.opacity = p.a0 * (1 - k) * Math.min(1, k * 8);
+      return true;
+    });
     const pos = this.parts.userData.pos as THREE.Vector3[] | undefined;
     let dirty = false;
     for (let k = 0; k < this.pdata.length; k++) {

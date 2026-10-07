@@ -43,6 +43,8 @@ export class ClientWorld {
   gasStart: number;
   snaps: Snap[] = [];
   latest: Snap | null = null;
+  latestAt = 0;
+  ping = 0;
   offset: number | null = null;
   seq = 0;
   pending: { seq: number; mx: number; my: number; dt: number }[] = [];
@@ -83,6 +85,7 @@ export class ClientWorld {
     this.snaps.push(snap);
     while (this.snaps.length > 40) this.snaps.shift();
     this.latest = snap;
+    this.latestAt = now;
 
     for (const e of s.ev) {
       if (e[0] === 'tile') setTile(this.map, e[1] % this.map.w, Math.floor(e[1] / this.map.w), e[2] as Tile);
@@ -156,10 +159,16 @@ export class ClientWorld {
 
   /** Отложенные на задержку интерполяции события (чтобы попадания совпадали с картинкой). */
   dueEvents(now: number): GameEvent[] {
+    // Попадания, взрывы, ящики, смерти показываем сразу (свои пули рисуются без задержки,
+    // так отклик быстрее). Отложены только выстрелы/суперы других — под их интерполированную позицию.
     const rt = this.renderMs(now);
     const out: GameEvent[] = [];
-    while (this.events.length && this.events[0].t * TICK_MS <= rt) out.push(this.events.shift()!.e);
-    if (this.events.length > 400) out.push(...this.events.splice(0).map((x) => x.e));
+    this.events = this.events.filter((x) => {
+      const delayed = (x.e[0] === 'shot' || x.e[0] === 'super') && x.e[1] !== this.you;
+      if (delayed && x.t * TICK_MS > rt && this.events.length < 400) return true;
+      out.push(x.e);
+      return false;
+    });
     return out;
   }
 
@@ -188,13 +197,23 @@ export class ClientWorld {
     if (!br) return [];
     const [a, b, k] = br;
     const out: { id: number; look: number; x: number; y: number; a: number }[] = [];
+    // свои снаряды — без задержки интерполяции: последний снапшот + экстраполяция на полпинга,
+    // чтобы пуля вылетала из ствола сразу после клика
+    const L = this.latest!;
+    const ahead = Math.min(0.3, (now - this.latestAt) / 1000 + this.ping / 2000);
+    for (const [id, p] of L.proj) {
+      if (p[6] !== this.you) continue;
+      const ang = p[4] / 100, sp = p[5] / 10;
+      out.push({ id, look: p[1], x: p[2] / 100 + Math.cos(ang) * sp * ahead, y: p[3] / 100 + Math.sin(ang) * sp * ahead, a: ang });
+    }
     for (const [id, pb] of b.proj) {
+      if (pb[6] === this.you) continue;
       const pa = a.proj.get(id);
       if (!pa) { if (k > 0.3 || a === b) out.push({ id, look: pb[1], x: pb[2] / 100, y: pb[3] / 100, a: pb[4] / 100 }); continue; }
       out.push({ id, look: pb[1], x: (pa[2] + (pb[2] - pa[2]) * k) / 100, y: (pa[3] + (pb[3] - pa[3]) * k) / 100, a: pb[4] / 100 });
     }
     // долетающие в последний кадр снаряды
-    if (a !== b) for (const [id, pa] of a.proj) if (!b.proj.has(id) && k < 0.5) out.push({ id, look: pa[1], x: pa[2] / 100, y: pa[3] / 100, a: pa[4] / 100 });
+    if (a !== b) for (const [id, pa] of a.proj) if (pa[6] !== this.you && !b.proj.has(id) && k < 0.5) out.push({ id, look: pa[1], x: pa[2] / 100, y: pa[3] / 100, a: pa[4] / 100 });
     return out;
   }
 
