@@ -499,7 +499,8 @@ export class GameView {
     this.v3.set(v.x, 2.3, v.y).project(this.camera);
     const sx = (this.v3.x * 0.5 + 0.5) * innerWidth, sy = (-this.v3.y * 0.5 + 0.5) * innerHeight;
     t.el.classList.toggle('hidden', this.v3.z > 1 || (v.flags & F_INVIS && !isMe && false) as boolean);
-    const k = Math.min(1.8, Math.max(1, innerHeight / 480));`n    t.el.style.transform = `translate(${sx - 31 * k}px, ${sy - 44 * k}px) scale(${k})`;
+    const k = Math.min(1.8, Math.max(1, innerHeight / 480));
+    t.el.style.transform = `translate(${sx - 31 * k}px, ${sy - 44 * k}px) scale(${k})`;
     t.el.style.opacity = v.flags & F_OFFLINE ? '0.5' : '1';
     const key = `${v.hp}|${v.maxHp}|${v.cans}|${isMe ? Math.round(v.ammo * 20) : 0}`;
     if (key !== t.last) {
