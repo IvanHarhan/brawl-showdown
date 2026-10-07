@@ -277,7 +277,7 @@ export class BotBrain {
   /** Уклонение: если чужой снаряд летит в нас — шаг вбок. */
   private checkDodge() {
     const g = this.game, p = this.p;
-    if (g.time < this.dodgeUntil || g.rand() < 0.6) return;
+    if (g.time < this.dodgeUntil || g.rand() < 0.8) return;
     for (const pr of g.projectiles) {
       if (pr.owner === p.slot) continue;
       const rx = p.x - pr.x, ry = p.y - pr.y;
