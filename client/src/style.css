@@ -117,9 +117,11 @@ html, body {
 #supZone.ready { background: radial-gradient(#fff3a0, #ffc400); animation: pulse 0.8s infinite alternate; color: var(--ink); text-shadow: none; }
 #supZone .ring { position: absolute; inset: -6px; border-radius: 50%; }
 @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.08); } }
-.pc #moveZone, .pc #atkZone, .pc #supZone { display: none; }
+.pc #moveZone { display: none; }
+.pc #atkZone, .pc #supZone { cursor: pointer; }
 .pc .pchint { display: block; }
-.pchint { display: none; position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font: 700 12px system-ui; opacity: .6; }
+.pchint { display: none; position: absolute; bottom: 14px; left: calc(var(--sal) + 12px); max-width: calc(100% - 300px); text-align: center; font: 800 14px system-ui; background: #000b; border: 2px solid #fff4; border-radius: 12px; padding: 8px 14px; pointer-events: none; text-align: left; }
+.pchint b { color: var(--yellow); }
 
 /* над головой */
 .tag3d { position: absolute; left: 0; top: 0; transform-origin: 50% 100%; pointer-events: none; text-align: center; will-change: transform; }

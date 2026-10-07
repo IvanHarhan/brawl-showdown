@@ -84,7 +84,7 @@ export class GameView {
       <div class="zone" id="atkZone"></div>
       <div class="stick hidden" id="moveStick"><div class="knob"></div></div>
       <div class="stick hidden" id="aimStick"><div class="knob"></div></div>
-      <div class="pchint">WASD — ходить · ЛКМ — атака · ПКМ или пробел — супер</div>`;
+      <div class="pchint"><b>WASD</b> — ходить · <b>мышь</b> — прицел · <b>ЛКМ</b> — стрелять · <b>ПКМ / Пробел</b> — супер</div>`;
     uiRoot.appendChild(this.hud);
     this.tagLayer = this.hud.querySelector('#tags') as HTMLElement;
     this.dmgLayer = this.hud.querySelector('#dmgs') as HTMLElement;
