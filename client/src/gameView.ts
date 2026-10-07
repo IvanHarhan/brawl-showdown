@@ -57,6 +57,8 @@ export class GameView {
   private boxBarEls = new Map<number, HTMLElement>();
   private killBadge = new Map<number, number>();
   private slowUntil = 0;
+  private reportAt = 0;
+  private reportFrames = 0;
   private superRing: THREE.Mesh | null = null;
   private canBorn = new Map<number, number>();
   private lastRender = { x: 0, y: 0, has: false };
@@ -387,6 +389,12 @@ export class GameView {
     this.sendAcc += dt;
     if (this.sendAcc >= TICK_DT) { this.sendAcc = 0; this.flushInputs(); }
     if (now - this.pingAt > 2000) { this.pingAt = now; this.room.send('ping', now); }
+    // раз в 5 с — пинг и FPS этого клиента в серверный лог
+    if (now - this.reportAt > 5000) {
+      const fps = this.reportAt ? ((this.stats.frames - this.reportFrames) * 1000) / (now - this.reportAt) : 0;
+      this.reportAt = now; this.reportFrames = this.stats.frames;
+      if (fps) this.room.send('cst', { ping: this.ping, fps });
+    }
 
     this.handleEvents(now);
     // замедление на смерти: только картинка, сеть идёт как обычно
