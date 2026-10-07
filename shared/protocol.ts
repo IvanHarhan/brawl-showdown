@@ -6,7 +6,7 @@ export const LOOKS = ['bullet', 'pellet', 'shuriken', 'fist', 'sign', 'heavy'] a
 export type InputItem = [seq: number, mx: number, my: number, dt: number];
 export interface AttackMsg { a: number }            // угол (рад)
 export interface SuperMsg { a: number; d: number }  // угол и дистанция до точки
-export interface JoinOptions { name: string; brawler: string; fast?: boolean }
+export interface JoinOptions { name: string; brawler: string; fast?: boolean; dev?: string }
 
 /** Флаги игрока в снапшоте */
 export const F_ALIVE = 1, F_BUSH = 2, F_INVIS = 4, F_LOCKED = 8, F_AIR = 16, F_STUN = 32, F_OFFLINE = 64, F_REVEALED = 128;

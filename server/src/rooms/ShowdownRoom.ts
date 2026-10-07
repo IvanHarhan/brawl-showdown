@@ -98,7 +98,7 @@ export class ShowdownRoom extends Room {
     this.members.push({ sid: client.sessionId, name: cleanName(options?.name), brawler: getBrawler(options?.brawler).id, connected: true, client });
     if (!this.host) this.host = client.sessionId;
     this.net.set(client.sessionId, { name: cleanName(options?.name), rtt: [], cping: 0, fps: 0 });
-    log(`[${this.roomId}] вход ${cleanName(options?.name)} (${this.members.length} чел.)`);
+    log(`[${this.roomId}] вход ${cleanName(options?.name)} [${String(options?.dev ?? '?').slice(0, 40)}] (${this.members.length} чел.)`);
     this.sendLobby();
   }
 
