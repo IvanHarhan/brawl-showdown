@@ -36,6 +36,7 @@ export class GameView {
   tagLayer: HTMLElement;
   private sendAcc = 0;
   private shake = 0;
+  private introAt = 0;
   private camTarget = new THREE.Vector3();
   private spectate = -1;
   private lastLocalShot = 0;
@@ -76,7 +77,7 @@ export class GameView {
     this.hud = document.createElement('div');
     this.hud.id = 'hud';
     this.hud.innerHTML = `
-      <div id="tags"></div><div id="dmgs"></div><div id="feed"></div>
+      <div class="fade" id="fade"></div><div id="tags"></div><div id="dmgs"></div><div id="feed"></div>
       <div class="top"><span class="pill" id="aliveP">👤 10</span><span class="pill" id="gasP"></span></div>
       <div class="ping" id="ping"></div>
       <div class="zone" id="moveZone"></div>
@@ -171,7 +172,8 @@ export class GameView {
     const look = a.kind === 'burst' || a.kind === 'spread' || a.kind === 'bouncer' ? a.look : 'bullet';
     if (isSuper && b.super.kind !== 'burst') return;
     const fx = x + Math.cos(angle) * 0.55, fy = y + Math.sin(angle) * 0.55;
-    if (look !== 'fist' && look !== 'sign') this.fx.flash(fx, 0.6, fy, 0xffe08a, 0.9, now);
+    if (look !== 'fist' && look !== 'sign') { this.fx.flash(fx, 0.6, fy, 0xffe08a, 0.9, now); this.fx.smoke(fx, 0.6, fy, 1, 0.45, 0xffffff, 0.1, 0.5, 0.4); }
+    else if (look === 'fist') this.fx.ring(fx, fy, 0.7, 0xffffff, 0.18);
     const snd = look === 'pellet' ? 'shotgun' : look === 'fist' ? 'punch' : look === 'sign' || look === 'shuriken' ? 'throw' : 'shot';
     this.audio.sfx(snd, vol);
   }
@@ -241,7 +243,7 @@ export class GameView {
         const isMe = target === w.you;
         if (target >= 0) {
           this.chars.get(target)?.flash(now);
-          this.fx.burst(x, 0.7, y, isMe ? 0xff4d4d : 0xffffff, 4, 2.5, 2);
+          this.fx.impact(x, y, isMe ? 0xff4d4d : 0xffe08a, now, dmg > 700);
           this.fx.hitMarker(x, y, now, !isMe);
           this.audio.sfx(isMe ? 'hitme' : 'hit', isMe ? 0.9 : near(x, y));
           if (isMe) this.shake = Math.max(this.shake, 0.12);
@@ -263,6 +265,7 @@ export class GameView {
         const wasBox = this.mapView.boxIndex.has(ti);
         this.mapView.removeTile(ti);
         this.fx.burst(x, 0.5, y, wasBox ? 0xb57a35 : 0x9a6fe0, 16, 4, 4);
+        this.fx.smoke(x, 0.4, y, 6, 1.1, wasBox ? 0xe0cfa8 : 0xd8c8f0, 0.7, 0.9, 1.1);
         this.audio.sfx('boxbreak', near(x, y));
         break;
       }
@@ -270,7 +273,7 @@ export class GameView {
         const [, slot, place, killer] = e;
         this.killFeed(slot, killer);
         const cv = this.chars.get(slot);
-        if (cv) { const p = cv.root.position; this.fx.burst(p.x, 0.8, p.z, 0xffffff, 18, 4, 5); this.fx.ring(p.x, p.z, 1.6, 0xffffff); }
+        if (cv) { const p = cv.root.position; this.fx.burst(p.x, 0.8, p.z, 0xffffff, 18, 4, 5); this.fx.ring(p.x, p.z, 1.6, 0xffffff); this.fx.smoke(p.x, 0.5, p.z, 8, 1.3, 0xcfc8d8, 0.9, 1.2, 1.4); }
         const r = w.rosterOf(slot);
         if (slot === w.you) {
           this.dead = true;
@@ -311,6 +314,7 @@ export class GameView {
         if (r > 0) {
           this.fx.ring(x, y, r, 0xffe08a);
           this.fx.burst(x, 0.3, y, 0xe6c98a, 14, 3.5, 3);
+          this.fx.smoke(x, 0.3, y, Math.min(10, 3 + Math.round(r * 3)), 1.0 + r * 0.3, 0xe8dcc0, r * 0.8, 0.7, 1.0);
           this.audio.sfx('boom', near(x, y));
           const n = near(x, y);
           if (n > 0.6) this.shake = Math.max(this.shake, 0.3 * n);
@@ -355,6 +359,7 @@ export class GameView {
     // ввод и предсказание
     let [mx, my] = this.input.move();
     if (this.autoplay) [mx, my] = this.autopilot(now);
+    w.ping = this.ping;
     w.predict(mx, my, dt, now);
     this.sendAcc += dt;
     if (this.sendAcc >= TICK_DT) { this.sendAcc = 0; this.flushInputs(); }
@@ -382,14 +387,28 @@ export class GameView {
     this.proj.sync(w.projectiles(now), now);
     this.updateMinions(now);
     this.updateCans(now);
-    this.gas.update(w.gas(now), now);
+    const gasHalf = w.gas(now);
+    this.gas.update(gasHalf, now);
+    // клубы газа вдоль границы рядом с камерой
+    if (gasHalf < w.map.w / 2 && Math.random() < dt * 14) {
+      const c = w.map.w / 2, side = Math.floor(Math.random() * 4);
+      const along = (k: number) => Math.max(c - gasHalf, Math.min(c + gasHalf, k + (Math.random() - 0.5) * 24));
+      const out = gasHalf + 0.3 + Math.random() * 1.5;
+      const px = side < 2 ? along(this.camTarget.x) : c + (side === 2 ? -out : out);
+      const py = side >= 2 ? along(this.camTarget.z) : c + (side === 0 ? -out : out);
+      if (Math.hypot(px - this.camTarget.x, py - this.camTarget.z) < 16) this.fx.smoke(px, 0.4, py, 1, 1.8, 0x8fe060, 0.4, 0.35, 2.2);
+    }
     this.mapView.update(now);
     this.fx.update(dt, now);
 
     // камера
     const meV = views.find((v) => v.slot === w.you);
     let tx: number, ty: number;
-    if (meV && !this.dead) { tx = meV.x; ty = meV.y; }
+    if (meV && !this.dead) {
+      tx = meV.x; ty = meV.y;
+      // первый кадр со своим бойцом: камера сразу над ним и плавно опускается
+      if (!this.introAt) { this.introAt = now; this.camTarget.set(tx, 0, ty); this.hud.querySelector('#fade')?.classList.add('gone'); }
+    }
     else {
       const alive = views.filter((v) => v.flags & F_ALIVE);
       let t = alive.find((v) => v.slot === this.spectate);
@@ -426,8 +445,10 @@ export class GameView {
     const fovV = (this.camera.fov * Math.PI) / 180;
     const tanV = Math.tan(fovV / 2);
     // горизонтальный экран: ~17 клеток в ширину, не меньше ~9.5 в высоту
-    const wantW = 17, wantH = 9.5;
-    const dist = Math.max(wantW / (2 * tanV * aspect), wantH / (2 * tanV)) * 0.95;
+    const wantW = 20, wantH = 11.5;
+    const intro = this.introAt ? Math.min(1, (performance.now() - this.introAt) / 1300) : 0;
+    const ease = 1 - Math.pow(1 - intro, 3);
+    const dist = Math.max(wantW / (2 * tanV * aspect), wantH / (2 * tanV)) * 0.95 * (1 + 1.6 * (1 - ease));
     this.shake = Math.max(0, this.shake - dt * 1.2);
     const sx = (Math.random() - 0.5) * this.shake, sz = (Math.random() - 0.5) * this.shake;
     const target = new THREE.Vector3(this.camTarget.x + sx, 0, this.camTarget.z - 0.6 + sz);

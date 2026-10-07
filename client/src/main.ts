@@ -1,3 +1,4 @@
+import './wsfix';
 import './style.css';
 import * as THREE from 'three';
 import type { Room } from '@colyseus/sdk';

@@ -188,3 +188,5 @@ html, body {
 #feed { position: absolute; top: calc(var(--sat) + 8px); left: calc(var(--sal) + 10px); display: flex; flex-direction: column; gap: 3px; pointer-events: none; }
 .kf { background: #000a; border-radius: 8px; padding: 3px 8px; font: 800 11px system-ui; }
 .kf.me { background: #c62828cc; }
+.fade { position: absolute; inset: 0; background: var(--bg); pointer-events: none; transition: opacity .7s ease-out; }
+.fade.gone { opacity: 0; }

@@ -13,8 +13,8 @@ export const F_ALIVE = 1, F_BUSH = 2, F_INVIS = 4, F_LOCKED = 8, F_AIR = 16, F_S
 
 /** [slot, x, y, hp, maxHp, cans, ammo×100, super×100, flags, facing×100] */
 export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number];
-/** [id, lookIndex, x, y, angle×100] */
-export type ProjSnap = [number, number, number, number, number];
+/** [id, lookIndex, x, y, angle×100, speed×10, ownerSlot] */
+export type ProjSnap = [number, number, number, number, number, number, number];
 /** [id, type(0 база, 1 помощник), x, y, hp, maxHp, ownerSlot, facing×100] */
 export type MinionSnap = [number, number, number, number, number, number, number, number];
 /** [id, x, y] */

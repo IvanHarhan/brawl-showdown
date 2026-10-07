@@ -108,6 +108,39 @@ class Builder:
         return self._finish([v for ring in rings for v in ring], color, bone, True)
 
 
+    def checker_ring(self, r1, r2, z0, z1, seg, c1, c2, bone, offset=0, scale_y=1.0, xy=(0, 0)):
+        """Кольцо цилиндра, грани покрашены через одну — для клетки."""
+        res = bmesh.ops.create_cone(self.bm, cap_ends=False, cap_tris=False, segments=seg, radius1=r1, radius2=r2, depth=z1 - z0,
+                                    matrix=self.mat((xy[0], xy[1], (z0 + z1) / 2), (0, 0, 0), (1, scale_y, 1)))
+        verts = res['verts']
+        for v in verts:
+            v[self.dl][BI[bone]] = 1.0
+        faces = set()
+        for v in verts:
+            faces.update(v.link_faces)
+        cols = (srgb(c1), srgb(c2))
+        for f in faces:
+            cc = f.calc_center_median()
+            k = int(((math.atan2(cc.y - xy[1], cc.x - xy[0]) + math.pi) / (2 * math.pi)) * seg + 0.5) + offset
+            f.smooth = True
+            for l in f.loops:
+                l[self.cl] = cols[k % 2]
+        return verts
+
+    def tri(self, size, loc, spin, color, bone, thick=0.008):
+        """Плоский треугольник лицом вперёд (-Y); spin поворачивает его в плоскости."""
+        res = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=True, segments=3, radius1=size, radius2=size, depth=thick,
+                                    matrix=self.mat(loc, (math.pi / 2, spin, 0)))
+        return self._finish(res['verts'], color, bone, False)
+
+
+def mix_hex(a, b, k):
+    a, b = a.lstrip('#'), b.lstrip('#')
+    ca = [int(a[i:i + 2], 16) for i in (0, 2, 4)]
+    cb = [int(b[i:i + 2], 16) for i in (0, 2, 4)]
+    return '#' + ''.join(f'{round(x + (y - x) * k):02x}' for x, y in zip(ca, cb))
+
+
 def build_body(B, c):
     H = c.get('height', 1.0)
     build = c.get('build', 'normal')
@@ -155,8 +188,26 @@ def build_body(B, c):
             B.cyl(lr, lr * 1.1, foot + (0.08 if shoes['type'] == 'boots' else 0), leg_top, (x, 0), bottom['color'], bone)
             if bt == 'rolled':
                 B.cyl(lr * 1.3, lr * 1.25, foot + 0.07, foot + 0.12, (x, 0), bottom.get('cuff', '#7f9fd0'), bone)
-            if bt == 'track':
+            if bt == 'track' and not bottom.get('tape'):
                 B.box((0.012, 0.02, leg_top - foot), (x + side * lr * 1.02, 0, (leg_top + foot) / 2), bottom.get('stripe', '#fff'), bone)
+            if bt == 'track' and bottom.get('tape'):
+                # лампас из повторяющихся вставок
+                n = 9
+                for i in range(n):
+                    a = foot + (leg_top - foot) * i / n
+                    b = foot + (leg_top - foot) * (i + 1) / n
+                    B.box((0.014, 0.03, b - a), (x + side * lr * 1.04, 0, (a + b) / 2), bottom['tape'][i % len(bottom['tape'])], bone)
+        if bottom.get('crosses'):
+            # серебряные кресты на штанинах
+            def leg_r(zz):
+                if bt == 'flare' and zz < z(0.3):
+                    k = (zz - foot) / (z(0.3) - foot)
+                    return lr * (1.75 + (1.0 - 1.75) * k)
+                return lr * 1.05
+            for zz in (z(0.38), z(0.2)):
+                fy2 = -leg_r(zz) - 0.006
+                B.box((0.012, 0.01, 0.07), (x, fy2, zz), '#e3e6ea', bone)
+                B.box((0.046, 0.01, 0.012), (x, fy2, zz + 0.014), '#e3e6ea', bone)
 
     # --- таз и торс
     B.cyl(tr * 0.92, tr * 0.95, z(0.42), z(0.52), (0, 0), bottom['color'], 'hips', seg=12, scale_y=0.8)
@@ -169,10 +220,32 @@ def build_body(B, c):
             b = t0 + (t1 - t0) * (i + 1) / n
             k = i / n
             B.cyl(tr * (1.0 - 0.05 * k), tr * (1.0 - 0.05 * (k + 1 / n)), a, b, (0, 0), top['color'] if i % 2 == 0 else top['stripe'], 'chest', seg=12, scale_y=0.78, cap=(i in (0, n - 1)))
+    elif tt == 'checker':
+        n = 5
+        for i in range(n):
+            a = t0 + (t1 - t0) * i / n
+            b = t0 + (t1 - t0) * (i + 1) / n
+            B.checker_ring(tr, tr * 0.99, a, b, 12, top['color'], top['stripe'], 'chest', offset=i, scale_y=0.78)
+        B.cyl(tr * 0.97, tr * 0.97, t0, t0 + 0.005, (0, 0), top['color'], 'chest', seg=12, scale_y=0.78)
+    elif tt == 'puffer':
+        # пуховик: дутые секции
+        n = 4
+        for i in range(n):
+            zc = t0 - 0.02 + (t1 - t0 + 0.02) * (i + 0.5) / n
+            hh = (t1 - t0 + 0.02) / n
+            B.sphere(tr * 1.38, (0, 0, zc), top['color'] if i % 2 == 0 else top.get('stripe', top['color']), 'chest',
+                     scale=(1, 0.8, hh / (tr * 1.38) * 0.75), seg=14, rings=6)
     else:
         B.cyl(tr, tr * 0.95, t0, t1, (0, 0), top['color'], 'chest', seg=12, scale_y=0.78)
-    B.sphere(tr * 0.97, (0, 0, t1), top['color'] if tt != 'sweater' else top['stripe'], 'chest', scale=(1, 0.78, 0.38), seg=12, rings=6)
+    B.sphere(tr * 0.97 * (1.3 if tt == 'puffer' else 1), (0, 0, t1), top['color'] if tt != 'sweater' else top['stripe'], 'chest', scale=(1, 0.78, 0.38), seg=12, rings=6)
     trim = top.get('trim')
+    if tt == 'puffer':
+        B.cyl(0.115, 0.11, t1 - 0.02, t1 + 0.09, (0, 0), top['color'], 'chest', seg=12)
+        B.box((0.014, 0.01, t1 - t0 + 0.08), (0, -tr * 1.1, (t0 + t1) / 2 + 0.02), top.get('trim', '#222'), 'chest')
+    if top.get('boxlogo'):
+        fy = -tr * 0.78 - 0.008
+        B.box((0.13, 0.01, 0.05), (0, fy, z(0.7)), '#d0141e', 'chest')
+        B.box((0.09, 0.013, 0.012), (0, fy - 0.002, z(0.7)), '#ffffff', 'chest')
     if tt in ('bomber', 'varsity', 'zip', 'tracksuit'):
         B.cyl(tr * 1.03, tr * 1.03, t0 - 0.005, t0 + 0.04, (0, 0), trim or top['color'], 'chest', seg=12, scale_y=0.8)
         B.cyl(0.085, 0.08, t1 + 0.0, t1 + 0.06, (0, 0), trim or top['color'], 'chest', seg=10)
@@ -182,8 +255,26 @@ def build_body(B, c):
         B.torus(0.1, 0.035, (0, 0.06, t1 + 0.02), top['color'], 'chest', rot=(1.2, 0, 0), seg=10, tseg=4)
     if tt == 'varsity':
         B.box((0.06, 0.01, 0.06), (0.08, -tr * 0.78, t1 - 0.1), trim or '#fff', 'chest')
-    if tt == 'hoodie':
+    if tt == 'hoodie' and hair['style'] != 'hood':
         B.torus(0.11, 0.04, (0, 0.06, t1 + 0.02), top['color'], 'chest', rot=(1.2, 0, 0), seg=10, tseg=4)
+    if tt == 'hoodie':
+        # карман-кенгуру
+        B.box((0.2, 0.02, 0.07), (0, -tr * 0.78, z(0.58)), mix_hex(top['color'], '#000000', 0.25), 'chest')
+        for side in (1, -1):
+            B.rod(0.007, (side * 0.03, -tr * 0.79, t1 - 0.01), (side * 0.035, -tr * 0.8, t1 - 0.11), top.get('trim', '#ddd'), 'chest', seg=4)
+
+    fy = -tr * 0.78 - 0.006
+    if c.get('emblem') == 'berserk':
+        # «клеймо»: два тёмно-красных треугольника — большой остриём вниз, малый вверх над ним
+        ec = '#7a0d0d'
+        B.tri(0.1, (0, fy, z(0.65)), -math.pi / 2, ec, 'chest')
+        B.tri(0.06, (0, fy - 0.002, z(0.76)), math.pi / 2, ec, 'chest')
+        B.box((0.012, 0.009, 0.2), (0, fy - 0.003, z(0.67)), '#2a0606', 'chest')
+    if c.get('emblem') == 'horseshoe':
+        # подкова (в духе джинсового бренда, без надписей)
+        gc = '#e0b43a'
+        B.torus(0.06, 0.012, (0, fy, z(0.69)), gc, 'chest', rot=(math.pi / 2, 0, 0), seg=14, tseg=4)
+        B.box((0.06, 0.012, 0.03), (0, fy + 0.004, z(0.745)), top['color'], 'chest')
 
     if c.get('emblem') == 'brand':
         # своя эмблема: клинок и два отростка, тёмно-красная
@@ -207,9 +298,16 @@ def build_body(B, c):
                 a = sh - (sh - hand_z - 0.04) * i / n
                 b = sh - (sh - hand_z - 0.04) * (i + 1) / n
                 B.cyl(ar, ar, b, a, (x, 0), top['color'] if i % 2 == 0 else top['stripe'], bone, seg=8)
-        elif tt == 'tee':
-            B.cyl(ar * 1.15, ar * 1.25, z(0.66), sh, (x, 0), top['color'], bone, seg=8)
+        elif tt in ('tee', 'checker'):
+            if tt == 'checker':
+                B.checker_ring(ar * 1.15, ar * 1.25, z(0.66), sh, 8, top['color'], top['stripe'], bone, xy=(x, 0))
+            else:
+                B.cyl(ar * 1.15, ar * 1.25, z(0.66), sh, (x, 0), top['color'], bone, seg=8)
             B.cyl(ar * 0.85, ar * 0.85, hand_z + 0.03, z(0.67), (x, 0), skin, bone, seg=8)
+        elif tt == 'puffer':
+            for i in range(3):
+                zc = sh - (sh - hand_z - 0.06) * (i + 0.5) / 3
+                B.sphere(ar * 1.7, (x, 0, zc), sleeve, bone, scale=(1, 1, 0.75), seg=10, rings=6)
         else:
             B.cyl(ar, ar * 1.05, hand_z + 0.04, sh, (x, 0), sleeve, bone, seg=8)
             if trim and tt in ('bomber', 'varsity'):
@@ -283,12 +381,21 @@ def build_body(B, c):
     if st != 'none':
         under = hair.get('under', hair['color'])
         cap_keep = lambda x, y, zz: zz > (-0.3 + 0.75 * ((-y + 1) / 2)) * 0.95 or (zz > -0.35 and y > 0.2)
-        rr = head_r + (0.012 if st == 'buzz' else 0.025)
-        B.sphere(rr, (0, 0.005, hz), under if st == 'crop' else hair['color'], 'head', scale=(1.0, 0.97, 0.97), seg=14, rings=10, keep=cap_keep)
+        rr = head_r + (0.012 if st in ('buzz', 'taper') else 0.025)
+        cap_col = under if st == 'crop' else mix_hex(hair['color'], skin, 0.5) if st == 'taper' else hair.get('inner', hair['color']) if st == 'hood' else hair['color']
+        B.sphere(rr, (0, 0.005, hz), cap_col, 'head', scale=(1.0, 0.97, 0.97), seg=14, rings=10, keep=cap_keep)
         if st == 'short':
             B.sphere(head_r * 0.85, (0, -0.02, hz + 0.1), hair['color'], 'head', scale=(1.05, 1.0, 0.6), seg=12, rings=7)
         if st == 'crop':
             B.sphere(head_r * 0.82, (0, -0.02, hz + 0.13), hair['color'], 'head', scale=(1.05, 1.0, 0.55), seg=12, rings=7)
+        if st == 'hood':
+            # капюшон надет: оболочка вокруг головы, открыто только лицо
+            B.sphere(head_r + 0.075, (0, 0.02, hz + 0.02), hair['color'], 'head', scale=(1.05, 1.0, 1.05), seg=16, rings=10,
+                     keep=lambda x, y, zz: y > -0.62 or zz > 0.55)
+            B.torus(head_r * 0.82, 0.03, (0, -head_r * 0.62, hz + 0.0), mix_hex(hair['color'], '#000000', 0.2), 'head', rot=(math.pi / 2 - 0.15, 0, 0), seg=16, tseg=4)
+        if st == 'taper':
+            # тейпер-фейд: виски почти под кожу, сверху короткий объём
+            B.sphere(head_r * 0.8, (0, -0.015, hz + 0.135), hair['color'], 'head', scale=(1.0, 1.02, 0.5), seg=12, rings=7)
         if st == 'curly':
             n = 26
             ga = math.pi * (3 - math.sqrt(5))
