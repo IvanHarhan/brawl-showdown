@@ -91,7 +91,22 @@ function clearUi() { ui.querySelectorAll(':scope > .screen, :scope > .overlay').
 
 // ---------- 3D превью в меню ----------
 
-const preview = { scene: new THREE.Scene(), char: null as CharacterView | null, id: '' };
+const preview = { scene: new THREE.Scene(), char: null as CharacterView | null, id: '', yaw: 0.4, spin: 0, drag: null as number | null, lastTouch: 0, lastX: 0 };
+// бойца в меню и лобби можно крутить пальцем/мышью; через 3 с без касаний снова крутится сам
+addEventListener('pointerdown', (e) => {
+  if (S.screen === 'game' || (e.target as HTMLElement).closest('button, input, .chip, .arrow, .plist, .panel')) return;
+  preview.drag = e.pointerId; preview.lastX = e.clientX; preview.lastTouch = performance.now();
+});
+addEventListener('pointermove', (e) => {
+  if (preview.drag !== e.pointerId) return;
+  const dx = e.clientX - preview.lastX;
+  preview.lastX = e.clientX;
+  preview.yaw += dx * 0.012;
+  preview.spin = dx * 0.012;
+  preview.lastTouch = performance.now();
+});
+addEventListener('pointerup', (e) => { if (preview.drag === e.pointerId) preview.drag = null; });
+addEventListener('pointercancel', () => { preview.drag = null; });
 {
   const s = preview.scene;
   s.background = new THREE.Color(0x2c1f6b);
@@ -297,6 +312,8 @@ function renderLobby() {
     <div class="row"><button class="btn small blue" id="share" style="flex:1">Поделиться ссылкой</button><button class="btn small gray" id="leave">Выйти</button></div>
     <div class="subtitle" style="margin-top:10px">Игроки ${L?.players.length ?? 0}/10 — остальных заменят боты</div>
     <div class="plist" id="plist"></div>
+    <div class="subtitle" style="margin-top:8px">Карта</div>
+    <div class="chips" id="maps"></div>
     </div>
     <div class="half">
     <div class="subtitle">Твой боец</div>
@@ -320,6 +337,14 @@ function renderLobby() {
     chips.appendChild(c);
   }
   if (me) setPreview(me.brawler);
+  const maps = scr.querySelector('#maps')!;
+  for (const [id, title] of [['koeln', 'Кёльн'], ['desert', 'Пустыня']]) {
+    const c = el('button', 'chip' + (L?.map === id ? ' on' : ''));
+    c.textContent = title;
+    c.disabled = !isHost;
+    c.addEventListener('click', () => S.room?.send('pick', { map: id }));
+    maps.appendChild(c);
+  }
   scr.querySelector('#start')?.addEventListener('click', () => { audio.unlock(); S.room?.send('start'); });
   scr.querySelector('#leave')!.addEventListener('click', () => backToMenu());
   scr.querySelector('#share')!.addEventListener('click', async () => {
@@ -477,7 +502,12 @@ function frame() {
       camera.lookAt(cx, 0.75, 0);
     }
     if (preview.char) {
-      preview.char.root.rotation.y = now / 1400;
+      if (preview.drag === null) {
+        // инерция после свайпа, потом медленное автокручение
+        preview.spin *= Math.exp(-dt * 4);
+        preview.yaw += preview.spin + (now - preview.lastTouch > 3000 ? dt * 0.7 : 0);
+      }
+      preview.char.root.rotation.y = preview.yaw;
       preview.char.update(dt, now, false, false);
     }
     renderer.render(preview.scene, camera);
