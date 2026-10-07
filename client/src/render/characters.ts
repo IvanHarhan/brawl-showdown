@@ -32,6 +32,9 @@ export class CharacterView {
   current: AnimName | '' = '';
   private oneShotUntil = 0;
   private flashUntil = 0;
+  private lean = 0;
+  private kick = 0;
+  private hop = 0;
   opacity = 1;
   shadow: THREE.Mesh;
   ready: Promise<void>;
@@ -92,6 +95,7 @@ export class CharacterView {
     this.current = '';
     this.play(name, 0.05);
     this.oneShotUntil = now + a.getClip().duration * 1000 * 0.9;
+    if (name === 'attack') this.kick = 1; else this.hop = 1;
   }
 
   flash(now: number) { this.flashUntil = now + 90; }
@@ -99,7 +103,19 @@ export class CharacterView {
   update(dt: number, now: number, moving: boolean, dead: boolean) {
     if (dead) this.play('death', 0.1);
     else if (now > this.oneShotUntil) this.play(moving ? 'run' : 'idle', 0.15);
+    if (moving && !dead) this.actions.run?.setEffectiveTimeScale(1.25);
     this.mixer?.update(dt);
+    // процедурная добавка: наклон в беге, отдача при атаке, подскок на супере
+    if (this.model && !dead) {
+      this.lean += ((moving ? 0.16 : 0) - this.lean) * Math.min(1, dt * 10);
+      this.kick = Math.max(0, this.kick - dt * 6);
+      this.hop = Math.max(0, this.hop - dt * 2.2);
+      this.model.rotation.x = this.lean - this.kick * 0.25;
+      this.model.position.z = -this.kick * 0.12;
+      this.model.position.y = Math.sin(this.hop * Math.PI) * 0.35;
+      const sq = 1 + this.kick * 0.08;
+      this.model.scale.set(sq, 1 / sq, sq);
+    }
     const fl = now < this.flashUntil;
     for (const m of this.mats) {
       m.emissive.setRGB(fl ? 0.9 : 0, fl ? 0.9 : 0, fl ? 0.9 : 0);

@@ -52,6 +52,7 @@ export class GameView {
   stats = { frames: 0, snaps: 0, maxJump: 0, jumps: [] as number[] };
   history = new Map<number, number[][]>();
   private lastRender = { x: 0, y: 0, has: false };
+  private seenPos = new Map<number, { x: number; y: number; until: number }>();
 
   constructor(start: StartMsg, public room: Room, public camera: THREE.PerspectiveCamera, public input: Input, public audio: Audio,
     uiRoot: HTMLElement, private cb: GameCallbacks) {
@@ -469,7 +470,16 @@ export class GameView {
     if (v.flags & F_INVIS) op = isMe ? 0.4 : 0.18 + 0.15 * Math.sin(now / 50);
     else if (isMe && (v.flags & F_BUSH)) op = 0.55;
     cv.opacity = op;
-    cv.update(dt, now, v.moving, !alive);
+    // «бежит» с удержанием 200 мс: у интерполированных игроков сдвиг между кадрами бывает нулевым
+    let moving = v.moving;
+    if (!isMe) {
+      const sp = this.seenPos.get(v.slot) ?? { x: v.x, y: v.y, until: 0 };
+      if (Math.hypot(v.x - sp.x, v.y - sp.y) > 0.003) sp.until = now + 200;
+      sp.x = v.x; sp.y = v.y;
+      this.seenPos.set(v.slot, sp);
+      moving = now < sp.until;
+    }
+    cv.update(dt, now, moving, !alive);
     this.updateTag(v, alive, isMe);
   }
 
