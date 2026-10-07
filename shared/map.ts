@@ -1,16 +1,20 @@
-// Карта — текст: # стена, B куст, X ящик, W вода, . пол, S спавн.
+// Карта — текст: # стена (ломается), D монумент (не ломается, напр. собор), B куст, X ящик, W вода, . пол, S спавн.
+// Строка `; theme: koeln` задаёт оформление (desert по умолчанию).
 
-export enum Tile { Floor = 0, Wall = 1, Bush = 2, Box = 3, Water = 4 }
+export enum Tile { Floor = 0, Wall = 1, Bush = 2, Box = 3, Water = 4, Solid = 5 }
 
 export interface GameMap {
   w: number;
   h: number;
   tiles: Uint8Array;
   spawns: { x: number; y: number }[];
+  theme: string;
 }
 
 export function parseMap(text: string): GameMap {
-  const lines = text.replace(/\r/g, '').split('\n').map((l) => l.trimEnd()).filter((l) => l.length > 0 && !l.startsWith(';'));
+  const all = text.replace(/\r/g, '').split('\n').map((l) => l.trimEnd());
+  const theme = all.map((l) => /^;\s*theme:\s*(\w+)/.exec(l)?.[1]).find(Boolean) ?? 'desert';
+  const lines = all.filter((l) => l.length > 0 && !l.startsWith(';'));
   const h = lines.length;
   const w = Math.max(...lines.map((l) => l.length));
   const tiles = new Uint8Array(w * h);
@@ -23,14 +27,15 @@ export function parseMap(text: string): GameMap {
       else if (c === 'B') t = Tile.Bush;
       else if (c === 'X') t = Tile.Box;
       else if (c === 'W') t = Tile.Water;
+      else if (c === 'D') t = Tile.Solid;
       else if (c === 'S') spawns.push({ x: x + 0.5, y: y + 0.5 });
       tiles[y * w + x] = t;
     }
   }
-  return { w, h, tiles, spawns };
+  return { w, h, tiles, spawns, theme };
 }
 
-const CHARS = ['.', '#', 'B', 'X', 'W'];
+const CHARS = ['.', '#', 'B', 'X', 'W', 'D'];
 
 /** Текущее состояние карты обратно в текст (сломанные стены/ящики уже пол). */
 export function mapToText(m: GameMap): string {
@@ -44,7 +49,7 @@ export function mapToText(m: GameMap): string {
     const x = Math.floor(s.x), y = Math.floor(s.y);
     rows[y] = rows[y].slice(0, x) + 'S' + rows[y].slice(x + 1);
   }
-  return rows.join('\n');
+  return (m.theme !== 'desert' ? `; theme: ${m.theme}\n` : '') + rows.join('\n');
 }
 
 export function tileAt(m: GameMap, tx: number, ty: number): Tile {
@@ -58,11 +63,11 @@ export function setTile(m: GameMap, tx: number, ty: number, t: Tile) {
 }
 
 export function blocksMove(t: Tile) {
-  return t === Tile.Wall || t === Tile.Box || t === Tile.Water;
+  return t === Tile.Wall || t === Tile.Box || t === Tile.Water || t === Tile.Solid;
 }
 
 export function blocksShot(t: Tile) {
-  return t === Tile.Wall || t === Tile.Box;
+  return t === Tile.Wall || t === Tile.Box || t === Tile.Solid;
 }
 
 export function isWalkable(m: GameMap, tx: number, ty: number) {

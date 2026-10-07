@@ -45,6 +45,26 @@ function colorize(g: THREE.BufferGeometry, fn: (y: number, ny: number) => THREE.
   return g;
 }
 
+const FACADES = ['#e8a87c', '#d4673a', '#f2d0a4', '#8fb9d9', '#a8d5ba', '#f4d35e', '#e07a5f', '#c9b79c', '#b5838d', '#f6bd60'];
+
+/** Дом старого города: корпус (красится instanceColor). */
+function houseBody() {
+  return colorize(new RoundedBoxGeometry(0.96, 1.25, 0.96, 1, 0.04).translate(0, 0.625, 0).toNonIndexed(), (_y, ny) => new THREE.Color(ny > 0.5 ? '#ffffff' : '#ffffff').multiplyScalar(ny > 0.5 ? 1 : 0.92));
+}
+
+/** Крыша-щипец, окна, дверь — не красятся. */
+function houseDetail() {
+  const parts: THREE.BufferGeometry[] = [];
+  const roof = new THREE.CylinderGeometry(0.62, 0.62, 1.0, 3).rotateZ(Math.PI / 2).rotateX(Math.PI / 6).scale(1, 0.75, 1).translate(0, 1.25 + 0.2, 0);
+  parts.push(colorize(roof.toNonIndexed(), () => new THREE.Color('#4a4450')));
+  for (const s of [-1, 1]) {
+    for (const wy of [0.42, 0.88]) for (const wx of [-0.22, 0.22]) {
+      parts.push(colorize(new THREE.BoxGeometry(0.17, 0.22, 0.04).translate(wx, wy, s * 0.49).toNonIndexed(), () => new THREE.Color('#2b3a4a')));
+    }
+  }
+  return mergeGeometries(parts)!;
+}
+
 /** Две бочки с обручами. */
 function barrelGeometry() {
   const wood = new THREE.Color('#b0652e'), dark = new THREE.Color('#7a3f17'), lid = new THREE.Color('#c98a4b'), hoop = new THREE.Color('#4a4a52');
@@ -85,6 +105,8 @@ export class MapView {
   water: THREE.Mesh | null = null;
   waterMat!: THREE.ShaderMaterial;
   private bushNearKey = '';
+  cathedral: { mesh: THREE.Mesh; x0: number; y0: number; x1: number; y1: number } | null = null;
+  private cathedralMat!: THREE.MeshToonMaterial;
 
   constructor(public map: GameMap) {
     this.buildFloor();
@@ -92,6 +114,7 @@ export class MapView {
     this.buildBushes();
     this.buildBoxes();
     this.buildWater();
+    this.buildCathedral();
   }
 
   private buildFloor() {
@@ -104,10 +127,11 @@ export class MapView {
       for (let x = 0; x < w; x++) {
         const odd = (x + y) % 2 === 0;
         const t = tiles[y * w + x];
-        g.fillStyle = t === Tile.Water ? '#b89a5c' : odd ? '#e6c98a' : '#dcbd7c';
+        const kl = this.map.theme === 'koeln';
+        g.fillStyle = t === Tile.Water ? (kl ? '#7f7a70' : '#b89a5c') : kl ? (odd ? '#b8b2a6' : '#aca598') : odd ? '#e6c98a' : '#dcbd7c';
         g.fillRect(x * S, y * S, S, S);
         if (t !== Tile.Water && rnd(x * 31 + y * 17) > 0.86) {
-          g.fillStyle = '#c9a866';
+          g.fillStyle = this.map.theme === 'koeln' ? '#99938a' : '#c9a866';
           g.fillRect(x * S + 4 + rnd(x + y) * 6, y * S + 5 + rnd(x * y) * 6, 3, 2);
         }
       }
@@ -136,7 +160,8 @@ export class MapView {
     out.position.set(w / 2, -0.02, h / 2);
     this.group.add(out);
     // бортик
-    const rimGeo = paintTopSide(new THREE.BoxGeometry(1, 0.35, 1), '#8a6b3e', '#6b4f2a');
+    const kl = this.map.theme === 'koeln';
+    const rimGeo = paintTopSide(new THREE.BoxGeometry(1, 0.35, 1), kl ? '#8d877d' : '#8a6b3e', kl ? '#6b665e' : '#6b4f2a');
     const rimCount = 2 * (w + 2) + 2 * h;
     const rim = new THREE.InstancedMesh(rimGeo, toonMaterial({ vertexColors: true }), rimCount);
     let k = 0;
@@ -179,9 +204,11 @@ export class MapView {
       const rx = Math.abs((root % w) + 0.5 - w / 2), ry = Math.abs(Math.floor(root / w) + 0.5 - h / 2);
       return Math.floor(rnd(Math.round(Math.min(rx, ry) * 7 + Math.max(rx, ry) * 13)) * 3);
     };
-    const geos = [wallGeometry(), barrelGeometry(), fenceGeometry()];
-    const per: number[][] = [[], [], []];
-    for (const ti of list) per[variantOf(ti)].push(ti);
+    // Кёльн: стены — цветные дома старого города (корпус красится, крыша и окна — нет)
+    const koeln = this.map.theme === 'koeln';
+    const geos = koeln ? [houseBody(), houseDetail()] : [wallGeometry(), barrelGeometry(), fenceGeometry()];
+    const per: number[][] = koeln ? [list, list] : [[], [], []];
+    if (!koeln) for (const ti of list) per[variantOf(ti)].push(ti);
     this.wallMeshes = per.map((tis, v) => {
       const mesh = new THREE.InstancedMesh(geos[v], toonMaterial({ vertexColors: true }), Math.max(1, tis.length));
       mesh.count = tis.length;
@@ -190,12 +217,20 @@ export class MapView {
         const x = ti % w, y = Math.floor(ti / w);
         // забор вдоль линии стены
         const horiz = tiles[ti - 1] === Tile.Wall || tiles[ti + 1] === Tile.Wall;
-        tmpQ.setFromAxisAngle(UP, v === 2 && !horiz ? Math.PI / 2 : v === 1 ? rnd(ti) * 6.28 : 0);
-        tmpP.set(x + 0.5, 0, y + 0.5);
-        tmpS.set(1, v === 0 ? 0.92 + rnd(ti) * 0.16 : 1, 1);
-        mesh.setMatrixAt(k, tmpM.compose(tmpP, tmpQ, tmpS));
-        const s = 0.9 + rnd(ti + 7) * 0.15;
-        mesh.setColorAt(k, new THREE.Color(s, s, s));
+        if (koeln) {
+          tmpQ.setFromAxisAngle(UP, horiz ? 0 : Math.PI / 2);
+          tmpP.set(x + 0.5, 0, y + 0.5);
+          tmpS.set(1, 0.85 + rnd(ti) * 0.45, 1);
+          mesh.setMatrixAt(k, tmpM.compose(tmpP, tmpQ, tmpS));
+          mesh.setColorAt(k, v === 0 ? new THREE.Color(FACADES[Math.floor(rnd(ti + 3) * FACADES.length)]) : new THREE.Color(1, 1, 1));
+        } else {
+          tmpQ.setFromAxisAngle(UP, v === 2 && !horiz ? Math.PI / 2 : v === 1 ? rnd(ti) * 6.28 : 0);
+          tmpP.set(x + 0.5, 0, y + 0.5);
+          tmpS.set(1, v === 0 ? 0.92 + rnd(ti) * 0.16 : 1, 1);
+          mesh.setMatrixAt(k, tmpM.compose(tmpP, tmpQ, tmpS));
+          const s = 0.9 + rnd(ti + 7) * 0.15;
+          mesh.setColorAt(k, new THREE.Color(s, s, s));
+        }
         index.set(ti, k);
       });
       const o = instancedOutline(mesh);
@@ -379,6 +414,69 @@ export class MapView {
     this.boxFlash.set(k, now + 100);
     this.boxes.setColorAt(k, new THREE.Color(2.2, 2.2, 2.2));
     this.boxes.instanceColor!.needsUpdate = true;
+  }
+
+  /** Кёльнский собор по прямоугольнику клеток D: две западные башни со шпилями, неф с контрфорсами, апсида. */
+  private buildCathedral() {
+    const { w, tiles } = this.map;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    tiles.forEach((t, i) => {
+      if (t !== Tile.Solid) return;
+      const x = i % w, y = Math.floor(i / w);
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1);
+    });
+    if (!Number.isFinite(x0)) return;
+    const stone = new THREE.Color('#6b6157'), dark = new THREE.Color('#4b443e'), roof = new THREE.Color('#5d5a66'), glass = new THREE.Color('#2c3e66');
+    const parts: THREE.BufferGeometry[] = [];
+    const add = (g: THREE.BufferGeometry, c: THREE.Color, top?: THREE.Color) => parts.push(colorize(g.toNonIndexed(), (yy, ny) => (top && ny > 0.5 ? top : c.clone().lerp(dark, Math.max(0, 0.6 - yy / 8)))));
+    const cz = (y0 + y1) / 2;
+    const towerW = 4;
+    // башни-близнецы
+    for (const tz of [y0 + 1.9, y1 - 1.9]) {
+      const tx = x0 + towerW / 2;
+      add(new THREE.BoxGeometry(towerW - 0.3, 6, 3.4).translate(tx, 3, tz), stone);
+      add(new THREE.BoxGeometry(towerW - 0.9, 1.6, 2.8).translate(tx, 6.8, tz), stone);
+      add(new THREE.ConeGeometry(1.7, 4.2, 4).rotateY(Math.PI / 4).translate(tx, 9.7, tz), stone);
+      add(new THREE.ConeGeometry(0.22, 0.9, 4).translate(tx, 12.2, tz), dark);
+      for (const [px, pz] of [[-1.6, -1.4], [1.6, -1.4], [-1.6, 1.4], [1.6, 1.4]]) add(new THREE.ConeGeometry(0.22, 1.4, 4).translate(tx + px, 6.7, tz + pz), dark);
+      for (const wy of [1.6, 3.6]) add(new THREE.BoxGeometry(0.5, 1.4, 3.45).translate(tx, wy, tz), glass);
+    }
+    // неф и крыша
+    const nx0 = x0 + towerW - 0.2, nx1 = x1 - 1.6;
+    const nLen = nx1 - nx0, nDepth = Math.min(5.4, y1 - y0 - 1.4);
+    add(new THREE.BoxGeometry(nLen, 3.4, nDepth).translate((nx0 + nx1) / 2, 1.7, cz), stone);
+    add(new THREE.CylinderGeometry(nDepth * 0.58, nDepth * 0.58, nLen, 3).rotateZ(Math.PI / 2).rotateX(Math.PI / 6).scale(1, 0.7, 1).translate((nx0 + nx1) / 2, 3.4 + nDepth * 0.2, cz), roof);
+    // контрфорсы с пинаклями и окна
+    for (let x = nx0 + 0.8; x < nx1 - 0.3; x += 1.5) {
+      for (const s of [-1, 1]) {
+        add(new THREE.BoxGeometry(0.35, 3.0, 0.7).translate(x, 1.5, cz + s * (nDepth / 2 + 0.3)), stone);
+        add(new THREE.ConeGeometry(0.16, 0.9, 4).translate(x, 3.4, cz + s * (nDepth / 2 + 0.3)), dark);
+        add(new THREE.BoxGeometry(0.5, 1.8, 0.06).translate(x + 0.75, 1.9, cz + s * (nDepth / 2 + 0.01)), glass);
+      }
+    }
+    // апсида и башенка над средокрестием
+    add(new THREE.CylinderGeometry(nDepth / 2, nDepth / 2, 3.2, 10, 1, false, 0, Math.PI).translate(nx1, 1.6, cz), stone);
+    add(new THREE.ConeGeometry(0.4, 2.4, 6).translate((nx0 + nx1) / 2 + 1, 5.6, cz), dark);
+    // по высоте сжимаем: вид сверху, собор не должен закрывать пол-экрана
+    const geo = mergeGeometries(parts)!.scale(1, 0.55, 1);
+    geo.computeVertexNormals();
+    this.cathedralMat = toonMaterial({ vertexColors: true, transparent: true });
+    const mesh = new THREE.Mesh(geo, this.cathedralMat);
+    addOutline(mesh);
+    this.cathedral = { mesh, x0, y0, x1, y1 };
+    this.group.add(mesh);
+  }
+
+  /** Собор полупрозрачный, когда за ним (дальше от камеры) стоит свой игрок. */
+  fadeOcclusion(px: number, py: number) {
+    const c = this.cathedral;
+    if (!c) return;
+    const behind = px > c.x0 - 1 && px < c.x1 + 1 && py > c.y0 - 5 && py < c.y1;
+    const target = behind ? 0.3 : 1;
+    this.cathedralMat.opacity += (target - this.cathedralMat.opacity) * 0.15;
+    this.cathedralMat.depthWrite = this.cathedralMat.opacity > 0.95;
+    const o = c.mesh.children[0];
+    if (o) o.visible = this.cathedralMat.opacity > 0.6;
   }
 
   update(now: number) {

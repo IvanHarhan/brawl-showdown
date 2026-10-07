@@ -61,7 +61,7 @@ export interface StartMsg {
 }
 
 export interface LobbyPlayer { sid: string; name: string; brawler: string; connected: boolean }
-export interface LobbyMsg { code: string; host: string; phase: 'lobby' | 'playing' | 'ended'; players: LobbyPlayer[] }
+export interface LobbyMsg { code: string; host: string; phase: 'lobby' | 'playing' | 'ended'; map: string; players: LobbyPlayer[] }
 
 export interface ResultEntry { slot: number; name: string; brawler: string; place: number; bot: boolean; kills: number }
 export interface EndMsg { results: ResultEntry[] }

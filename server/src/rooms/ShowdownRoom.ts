@@ -4,7 +4,7 @@ import { Game, Player } from '../game/Game';
 import { BRAWLERS, getBrawler } from '../../../shared/brawlers';
 import { MAX_PLAYERS, RECONNECT_SECONDS, TICK_DT } from '../../../shared/constants';
 import type { InputItem, LobbyMsg, JoinOptions } from '../../../shared/protocol';
-import { MAP_PATH } from '../paths';
+import { MAPS, mapFile } from '../paths';
 import { log, liveRooms } from '../log';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -35,6 +35,7 @@ export class ShowdownRoom extends Room {
   host = '';
   game: Game | null = null;
   fast = false;
+  mapId = 'koeln';
   private bySid = new Map<string, Player>();
   // сетевая статистика: пинг, который меряет сервер, и то, что прислал клиент
   private net = new Map<string, { name: string; rtt: number[]; cping: number; fps: number }>();
@@ -49,11 +50,12 @@ export class ShowdownRoom extends Room {
     this.setPatchRate(null);
     this.autoDispose = true;
 
-    this.onMessage('pick', (client, msg: { brawler?: string; name?: string }) => {
+    this.onMessage('pick', (client, msg: { brawler?: string; name?: string; map?: string }) => {
       const m = this.member(client.sessionId);
       if (!m || this.phase === 'playing') return;
       if (msg?.brawler && BRAWLERS.some((b) => b.id === msg.brawler)) m.brawler = msg.brawler;
       if (msg?.name !== undefined) m.name = cleanName(msg.name);
+      if (msg?.map && MAPS[msg.map] && client.sessionId === this.host) this.mapId = msg.map;
       this.sendLobby();
     });
     this.onMessage('start', (client) => {
@@ -148,7 +150,7 @@ export class ShowdownRoom extends Room {
 
   private lobbyMsg(): LobbyMsg {
     return {
-      code: this.roomId, host: this.host, phase: this.phase,
+      code: this.roomId, host: this.host, phase: this.phase, map: this.mapId,
       players: this.members.map((m) => ({ sid: m.sid, name: m.name, brawler: m.brawler, connected: m.connected })),
     };
   }
@@ -156,7 +158,7 @@ export class ShowdownRoom extends Room {
   private sendLobby() { this.broadcast('lobby', this.lobbyMsg()); }
 
   startGame() {
-    const mapText = readFileSync(MAP_PATH, 'utf8');
+    const mapText = readFileSync(mapFile(this.mapId), 'utf8');
     const game = new Game(mapText, this.fast ? { gasStart: 8, gasDuration: 45 } : {});
     this.bySid.clear();
     const order = [...this.members].sort(() => Math.random() - 0.5);

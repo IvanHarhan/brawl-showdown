@@ -461,7 +461,10 @@ export class GameView {
       if (!t && alive.length) { t = alive[0]; this.spectate = t.slot; }
       tx = t ? t.x : this.camTarget.x; ty = t ? t.y : this.camTarget.z;
     }
-    if (meV) this.mapView.updateBushesNear(meV.x, meV.y);
+    if (meV) { this.mapView.updateBushesNear(meV.x, meV.y); this.mapView.fadeOcclusion(meV.x, meV.y); }
+    // отладка: window.__cam = 'x,y' — камера смотрит на точку карты (скриншоты)
+    const cp = (window as unknown as { __cam?: string }).__cam;
+    if (cp) { const [cx, cy] = cp.split(',').map(Number); tx = cx; ty = cy; }
     const k = 1 - Math.exp(-dt * 12);
     this.camTarget.x += (tx - this.camTarget.x) * k;
     this.camTarget.z += (ty - this.camTarget.z) * k;
@@ -491,7 +494,7 @@ export class GameView {
     const fovV = (this.camera.fov * Math.PI) / 180;
     const tanV = Math.tan(fovV / 2);
     // горизонтальный экран: ~17 клеток в ширину, не меньше ~9.5 в высоту
-    const wantW = 20, wantH = 11.5;
+    const wantW = 22, wantH = 12.5;
     const intro = this.introAt ? Math.min(1, (performance.now() - this.introAt) / 1300) : 0;
     const ease = 1 - Math.pow(1 - intro, 3);
     const dist = Math.max(wantW / (2 * tanV * aspect), wantH / (2 * tanV)) * 0.95 * (1 + 1.6 * (1 - ease));
@@ -775,7 +778,7 @@ export class GameView {
     // обход стен: если впереди непроходимо — поворачиваем
     const ahead = (ax: number, ay: number) => {
       const t = tileAt(w.map, Math.floor(pos.x + ax * 0.8), Math.floor(pos.y + ay * 0.8));
-      return t === Tile.Wall || t === Tile.Water || t === Tile.Box;
+      return t === Tile.Wall || t === Tile.Water || t === Tile.Box || t === Tile.Solid;
     };
     if (Math.hypot(pos.x - A.lx, pos.y - A.ly) < 0.05) A.stuck++; else A.stuck = 0;
     A.lx = pos.x; A.ly = pos.y;

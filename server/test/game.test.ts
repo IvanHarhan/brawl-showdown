@@ -296,6 +296,36 @@ describe('карта', () => {
   });
 });
 
+describe('карта Кёльн', () => {
+  const text = readFileSync(new URL('../../maps/koeln.txt', import.meta.url), 'utf8');
+  it('60x60, тема koeln, 10 спавнов, собор есть', () => {
+    const m = parseMap(text);
+    expect(m.theme).toBe('koeln');
+    expect(m.w).toBe(60);
+    expect(m.spawns.length).toBe(10);
+    expect([...m.tiles].filter((t) => t === Tile.Solid).length).toBeGreaterThan(50);
+  });
+  it('собор не ломается ни очередью Дрипа, ни рывком Шопа', () => {
+    const g = new Game(text, { seed: 1, gasStart: 1000 });
+    const a = g.addPlayer('a', 'drip', false), b = g.addPlayer('b', 'shop', false);
+    g.start();
+    const solid = () => [...g.map.tiles].filter((t) => t === Tile.Solid).length;
+    const before = solid();
+    a.x = 30; a.y = 26.5; a.superCharge = 1;
+    g.superAttack(a, -Math.PI / 2, 10);
+    b.x = 31; b.y = 26.5; b.superCharge = 1;
+    g.superAttack(b, -Math.PI / 2, 9);
+    for (let i = 0; i < 60; i++) g.tick(0.05);
+    expect(solid()).toBe(before);
+  });
+  it('10 ботов доигрывают на Кёльне', () => {
+    const g = new Game(text, { seed: 5 });
+    for (let i = 0; i < 10; i++) g.addPlayer('b' + i, BRAWLERS[i % BRAWLERS.length].id, true);
+    g.start();
+    while (!g.ended && g.time < 400) g.tick();
+    expect(g.ended).toBe(true);
+  });
+});
 describe('бой ботов', () => {
   it('10 ботов доигрывают до победителя', () => {
     const text = readFileSync(new URL('../../maps/showdown1.txt', import.meta.url), 'utf8');
