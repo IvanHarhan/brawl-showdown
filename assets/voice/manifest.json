@@ -14,7 +14,7 @@
    "win1"
   ]
  },
- "bubu": {
+ "bit8": {
   "attack": [
    "attack1",
    "attack2"
@@ -33,6 +33,37 @@
   "attack": [
    "attack1",
    "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "gamas": {
+  "attack": [
+   "attack1",
+   "attack2"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "hussein": {
+  "attack": [
+   "attack1",
+   "attack2",
+   "attack3"
   ],
   "super": [
    "super1"
@@ -79,6 +110,21 @@
    "attack1",
    "attack2",
    "attack3"
+  ],
+  "super": [
+   "super1"
+  ],
+  "death": [
+   "death1"
+  ],
+  "win": [
+   "win1"
+  ]
+ },
+ "shop": {
+  "attack": [
+   "attack1",
+   "attack2"
   ],
   "super": [
    "super1"

@@ -208,3 +208,8 @@ html, body {
 #hud .ping.bad { color: #ff6b6b; }
 #death { justify-content: flex-end; background: linear-gradient(to bottom, #0000 35%, #000b 100%); }
 #death .panel.compact { margin: 0 0 calc(var(--sab) + 10px); background: #000c; }#hud .zoombtn { position: absolute; top: calc(var(--sat) + 44px); right: calc(var(--sar) + 10px); pointer-events: auto; font-size: 20px; width: 44px; height: 44px; border-radius: 12px; border: 2px solid #fff4; background: #000a; color: #fff; cursor: pointer; }
+#hud .respawn { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); font-size: 30px; color: #fff; -webkit-text-stroke: 4px #000; paint-order: stroke fill; pointer-events: none; }
+.accbtn { position: fixed; top: calc(var(--sat) + 10px); right: calc(var(--sar) + 12px); z-index: 30; font: 800 14px system-ui; color: #fff; background: #000a; border: 2px solid #fff4; border-radius: 12px; padding: 8px 12px; cursor: pointer; }
+.overlay.profile .panel { max-height: 90vh; overflow: auto; }
+.overlay.profile .plist { max-height: 40vh; overflow: auto; }
+.toast .btn.small { width: auto; margin-left: 8px; }

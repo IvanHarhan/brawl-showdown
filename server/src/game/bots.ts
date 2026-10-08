@@ -127,9 +127,9 @@ export class BotBrain {
       const d = Math.hypot(o.x - p.x, o.y - p.y);
       if (d > 13) continue;
       // в начале катки ломаем ящики, дерёмся только с теми, кто рядом
-      if (g.time < 45 && d > 6) continue;
+      if (g.time < g.calm(45) && d > 6) continue;
       // первые секунды не нападаем первыми — только отвечаем
-      if (g.time < 35 && g.time - p.lastHurt > 1.5) continue;
+      if (g.time < g.calm(35) && g.time - p.lastHurt > 1.5) continue;
       const weaker = o.hp <= p.hp * 1.4 || o.cans < p.cans || o.hp < g.maxHp(o) * 0.5;
       if (!weaker && d > range + 1.5) continue;
       const score = d - (weaker ? 4 : 0) + (o.hp / g.maxHp(o)) * 3;
@@ -178,7 +178,7 @@ export class BotBrain {
           if (d < pd) { pd = d; prey = o; }
         }
         const c = g.map.w / 2;
-        const hunt = prey && g.time > 35;
+        const hunt = prey && g.time > g.calm(35);
         const gx = hunt ? prey!.x : c, gy = hunt ? prey!.y : c;
         if (Math.hypot(p.x - gx, p.y - gy) > 5) {
           const tx0 = Math.floor(gx), ty0 = Math.floor(gy);

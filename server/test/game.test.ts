@@ -326,6 +326,47 @@ describe('карта Кёльн', () => {
     expect(g.ended).toBe(true);
   });
 });
+describe('схватка (возрождения)', () => {
+  it('убитый возрождается через 3 с с полным HP и щитом', () => {
+    const g = new Game(MAP, { seed: 1, mode: 'brawl' });
+    const a = g.addPlayer('a', 'drip', false), b = g.addPlayer('b', 'drip', false);
+    g.start();
+    g.kill(b, a);
+    expect(b.alive).toBe(false);
+    expect(a.kills).toBe(1);
+    run(g, 2.9);
+    expect(b.alive).toBe(false);
+    run(g, 0.2);
+    expect(b.alive).toBe(true);
+    expect(b.hp).toBe(b.brawler.hp);
+    const hp = b.hp;
+    g.damagePlayer(b, 500, a, true);
+    expect(b.hp).toBe(hp);
+    expect(g.ended).toBe(false);
+  });
+  it('газа нет, конец по лимиту убийств, места по убийствам', () => {
+    const g = new Game(MAP, { seed: 1, mode: 'brawl', killGoal: 3 });
+    const a = g.addPlayer('a', 'drip', false), b = g.addPlayer('b', 'drip', false), c = g.addPlayer('c', 'drip', false);
+    g.start();
+    expect(g.gasHalf(500)).toBeGreaterThan(10);
+    for (let i = 0; i < 3; i++) { g.kill(b, a); run(g, 3.2); }
+    g.kill(a, c);
+    run(g, 0.1);
+    expect(g.ended).toBe(true);
+    const r = g.results();
+    expect(r[0].slot).toBe(a.slot);
+    expect(r[0].kills).toBe(3);
+  });
+  it('10 ботов в схватке доигрывают по времени', () => {
+    const text = readFileSync(new URL('../../maps/koeln.txt', import.meta.url), 'utf8');
+    const g = new Game(text, { seed: 3, mode: 'brawl', duration: 90 });
+    for (let i = 0; i < 10; i++) g.addPlayer('b' + i, BRAWLERS[i % BRAWLERS.length].id, true);
+    g.start();
+    while (!g.ended && g.time < 200) g.tick();
+    expect(g.ended).toBe(true);
+    expect(g.players.reduce((s, p) => s + p.kills, 0)).toBeGreaterThan(5);
+  });
+});
 describe('бой ботов', () => {
   it('10 ботов доигрывают до победителя', () => {
     const text = readFileSync(new URL('../../maps/showdown1.txt', import.meta.url), 'utf8');
