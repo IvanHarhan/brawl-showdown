@@ -7,7 +7,7 @@ import { ProjectileViews, Fx, GasView, AimView, makeBlobShadowMat, makeMinionMes
 import { Input, AimKind } from './input';
 import { Audio } from './audio';
 import { getBrawler, superAimType, superRange, Brawler } from '../../shared/brawlers';
-import { F_SHIELD, F_ALIVE, F_BUSH, F_INVIS, F_OFFLINE, F_AIR, GameEvent, StartMsg, Snapshot } from '../../shared/protocol';
+import { F_SEEKER, F_SHIELD, F_ALIVE, F_BUSH, F_INVIS, F_OFFLINE, F_AIR, GameEvent, StartMsg, Snapshot } from '../../shared/protocol';
 import { Tile, lineOfFire, tileAt } from '../../shared/map';
 import { TICK_DT, BOX_HP } from '../../shared/constants';
 
@@ -64,6 +64,7 @@ export class GameView {
   private areaMeshes = new Map<number, THREE.Mesh>();
   private turn = new Map<number, number>();
   private respawnAt = 0;
+  private seekRings = new Map<number, THREE.Mesh>();
   zoomFar = (() => { try { return localStorage.getItem('brawl_zoom') !== 'near'; } catch { return true; } })();
   private zoomK = 1;
   toggleZoom(far = !this.zoomFar) {
@@ -315,7 +316,7 @@ export class GameView {
         const cv = this.chars.get(slot);
         if (cv) { const p = cv.root.position; this.fx.burst(p.x, 0.8, p.z, 0xffffff, 18, 4, 5); this.fx.ring(p.x, p.z, 1.6, 0xffffff); this.fx.smoke(p.x, 0.5, p.z, 8, 1.3, 0xcfc8d8, 0.9, 1.2, 1.4); }
         const r = w.rosterOf(slot);
-        if (slot === w.you && w.mode === 'brawl') {
+        if (slot === w.you && w.mode !== 'showdown') {
           // схватка: отсчёт до возрождения вместо экрана поражения
           this.dead = true;
           this.respawnAt = now + 3000;
@@ -549,11 +550,23 @@ export class GameView {
     let dA = want - cur;
     while (dA > Math.PI) dA -= Math.PI * 2;
     while (dA < -Math.PI) dA += Math.PI * 2;
-    cur += dA * (1 - Math.exp(-dt * 16));
+    cur += dA * (1 - Math.exp(-dt * 9));
     this.turn.set(v.slot, cur);
     cv.root.rotation.y = cur;
     const isMe = v.slot === w.you;
     let op = 1;
+    // водящий в прятках — красное кольцо под ногами
+    let ring = this.seekRings.get(v.slot);
+    if (v.flags & F_SEEKER && alive) {
+      if (!ring) {
+        ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.66, 32), new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+        ring.rotation.x = -Math.PI / 2;
+        this.scene.add(ring);
+        this.seekRings.set(v.slot, ring);
+      }
+      ring.visible = true;
+      ring.position.set(v.x, 0.04, v.y);
+    } else if (ring) ring.visible = false;
     if (v.flags & F_SHIELD) op = 0.55 + 0.35 * Math.abs(Math.sin(now / 90));
     else if (v.flags & F_INVIS) op = isMe ? 0.4 : 0.18 + 0.15 * Math.sin(now / 50);
     else if (isMe && (v.flags & F_BUSH)) op = 0.55;
@@ -756,7 +769,18 @@ export class GameView {
     const alive = this.hud.querySelector('#aliveP') as HTMLElement;
     const gasP = this.hud.querySelector('#gasP') as HTMLElement;
     const rs = this.hud.querySelector('#respawn') as HTMLElement;
-    if (this.world.mode === 'brawl') {
+    if (this.world.mode === 'hide') {
+      const t = Math.ceil(info.tl);
+      const me2 = this.world.meLatest();
+      const iSeek = !!me2 && (me2[8] & F_SEEKER) !== 0;
+      const count = Math.ceil(20 - info.el);
+      alive.textContent = `⏱ ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      gasP.textContent = `🙈 прячутся: ${info.hd}  ·  ${iSeek ? '👁 ты водишь' : '🌿 ты прячешься'}`;
+      gasP.classList.remove('gaswarn');
+      rs.classList.toggle('hidden', count <= 0 && !this.dead);
+      rs.textContent = this.dead ? 'Пойман! Теперь водишь…' : iSeek ? `Ты водишь! Считаем: ${count}` : `Прячься! ${count}`;
+      this.hud.classList.toggle('blind', iSeek && count > 0);
+    } else if (this.world.mode === 'brawl') {
       // схватка: таймер, мои убийства, лидер, отсчёт возрождения
       const t = Math.ceil(info.tl);
       const mine = info.sc.find((s) => s[0] === this.world.you);

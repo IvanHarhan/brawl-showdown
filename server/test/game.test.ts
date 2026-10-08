@@ -367,6 +367,34 @@ describe('схватка (возрождения)', () => {
     expect(g.players.reduce((s, p) => s + p.kills, 0)).toBeGreaterThan(5);
   });
 });
+describe('прятки', () => {
+  it('водящий 20 с не двигается и не видит, прячущиеся не стреляют, пойманный водит', () => {
+    const g = new Game(MAP, { seed: 1, mode: 'hide', duration: 60 });
+    const a = g.addPlayer('a', 'drip', false), b = g.addPlayer('b', 'drip', false);
+    g.start();
+    const seeker = g.players.find((p) => p.seeker)!, hider = g.players.find((p) => !p.seeker)!;
+    expect(g.canAct(seeker)).toBe(false);
+    expect(g.hiddenFrom(hider, seeker)).toBe(true);
+    expect(g.attack(hider, 0)).toBe(false);
+    run(g, 20.1);
+    expect(g.canAct(seeker)).toBe(true);
+    g.kill(hider, seeker);
+    expect(hider.seeker).toBe(true);
+    run(g, 0.1);
+    expect(g.ended).toBe(true);
+    expect(seeker.place).toBe(1);
+    void a; void b;
+  });
+  it('10 ботов в прятках доигрывают', () => {
+    const text = readFileSync(new URL('../../maps/showdown1.txt', import.meta.url), 'utf8');
+    const g = new Game(text, { seed: 4, mode: 'hide', duration: 120 });
+    for (let i = 0; i < 10; i++) g.addPlayer('b' + i, BRAWLERS[i % BRAWLERS.length].id, true);
+    g.start();
+    while (!g.ended && g.time < 300) g.tick();
+    expect(g.ended).toBe(true);
+    console.log('прятки: время', g.time.toFixed(0), 'водящих', g.players.filter((p) => p.seeker).length);
+  });
+});
 describe('бой ботов', () => {
   it('10 ботов доигрывают до победителя', () => {
     const text = readFileSync(new URL('../../maps/showdown1.txt', import.meta.url), 'utf8');
