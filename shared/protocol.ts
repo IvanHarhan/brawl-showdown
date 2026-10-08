@@ -9,7 +9,7 @@ export interface SuperMsg { a: number; d: number }  // угол и дистан�
 export interface JoinOptions { name: string; brawler: string; fast?: boolean; dev?: string; token?: string }
 
 /** Флаги игрока в снапшоте */
-export const F_ALIVE = 1, F_BUSH = 2, F_INVIS = 4, F_LOCKED = 8, F_AIR = 16, F_STUN = 32, F_OFFLINE = 64, F_REVEALED = 128, F_SHIELD = 256;
+export const F_ALIVE = 1, F_BUSH = 2, F_INVIS = 4, F_LOCKED = 8, F_AIR = 16, F_STUN = 32, F_OFFLINE = 64, F_REVEALED = 128, F_SHIELD = 256, F_SEEKER = 512;
 
 /** [slot, x, y, hp, maxHp, cans, ammo×100, super×100, flags, facing×100] */
 export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number];
@@ -49,6 +49,7 @@ export interface Snapshot {
   ev: GameEvent[];
   tl?: number;                        // схватка: осталось секунд ×10
   sc?: [number, number, number][];    // схватка: [slot, убийства, смерти]
+  hd?: number;                        // прятки: сколько ещё прячется
 }
 
 export interface RosterEntry { slot: number; name: string; brawler: string; bot: boolean; sid: string }
@@ -61,13 +62,13 @@ export interface StartMsg {
   t: number;
   gasStart: number;
   gasDuration: number;
-  mode: 'showdown' | 'brawl';
+  mode: 'showdown' | 'brawl' | 'hide';
   duration: number;
   killGoal: number;
 }
 
 export interface LobbyPlayer { sid: string; name: string; brawler: string; connected: boolean }
-export interface LobbyMsg { code: string; host: string; phase: 'lobby' | 'playing' | 'ended'; map: string; mode: 'showdown' | 'brawl'; players: LobbyPlayer[] }
+export interface LobbyMsg { code: string; host: string; phase: 'lobby' | 'playing' | 'ended'; map: string; mode: 'showdown' | 'brawl' | 'hide'; players: LobbyPlayer[] }
 
 export interface ResultEntry { slot: number; name: string; brawler: string; place: number; bot: boolean; kills: number; deaths: number }
 export interface EndMsg { results: ResultEntry[] }

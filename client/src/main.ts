@@ -443,7 +443,7 @@ function renderLobby() {
   }
   if (me) setPreview(me.brawler);
   const modes = scr.querySelector('#modes')!;
-  for (const [id, title] of [['showdown', 'Шоудаун'], ['brawl', 'Схватка (возрождения)']]) {
+  for (const [id, title] of [['showdown', 'Шоудаун'], ['brawl', 'Схватка (возрождения)'], ['hide', 'Прятки']]) {
     const c = el('button', 'chip' + (L?.mode === id ? ' on' : ''));
     c.textContent = title;
     c.disabled = !isHost;

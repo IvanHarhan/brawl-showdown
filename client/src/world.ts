@@ -22,6 +22,7 @@ interface Snap {
   el: number;
   tl: number;
   sc: [number, number, number][];
+  hd: number;
 }
 
 export interface PView {
@@ -44,7 +45,7 @@ export class ClientWorld {
   me: Brawler;
   boxes: Map<number, number>;
   gasStart: number;
-  mode: 'showdown' | 'brawl';
+  mode: 'showdown' | 'brawl' | 'hide';
   killGoal: number;
   snaps: Snap[] = [];
   latest: Snap | null = null;
@@ -83,7 +84,7 @@ export class ClientWorld {
       players: new Map(s.p.map((p) => [p[0], p])),
       proj: new Map(s.pr.map((p) => [p[0], p])),
       minions: new Map(s.mn.map((m) => [m[0], m])),
-      cans: s.c, areas: s.ar ?? [], gas: s.gas / 100, alive: s.alive, el: s.el / 10, tl: (s.tl ?? 0) / 10, sc: s.sc ?? [],
+      cans: s.c, areas: s.ar ?? [], gas: s.gas / 100, alive: s.alive, el: s.el / 10, tl: (s.tl ?? 0) / 10, sc: s.sc ?? [], hd: s.hd ?? 0,
     };
     if (this.latest && snap.t <= this.latest.t) return;
     const sample = snap.ms - now;
@@ -249,5 +250,5 @@ export class ClientWorld {
     return a.gas + (b.gas - a.gas) * k;
   }
 
-  info() { return this.latest ? { alive: this.latest.alive, el: this.latest.el, tl: this.latest.tl, sc: this.latest.sc } : { alive: 10, el: 0, tl: 0, sc: [] as [number, number, number][] }; }
+  info() { return this.latest ? { alive: this.latest.alive, el: this.latest.el, tl: this.latest.tl, sc: this.latest.sc, hd: this.latest.hd } : { alive: 10, el: 0, tl: 0, sc: [] as [number, number, number][], hd: 0 }; }
 }

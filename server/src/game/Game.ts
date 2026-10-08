@@ -10,7 +10,7 @@ import {
   REVEAL_AFTER_SHOT, GAS_START, GAS_DURATION, GAS_MIN_HALF, GAS_DAMAGE, TICK_DT,
 } from '../../../shared/constants';
 import {
-  LOOKS, F_SHIELD, F_ALIVE, F_BUSH, F_INVIS, F_LOCKED, F_AIR, F_STUN, F_OFFLINE, F_REVEALED,
+  LOOKS, F_SHIELD, F_SEEKER, F_ALIVE, F_BUSH, F_INVIS, F_LOCKED, F_AIR, F_STUN, F_OFFLINE, F_REVEALED,
   GameEvent, Snapshot, PlayerSnap, ProjSnap, AreaSnap, MinionSnap, CanSnap, InputItem, StartMsg, RosterEntry, ResultEntry,
 } from '../../../shared/protocol';
 import { BotBrain } from './bots';
@@ -56,6 +56,7 @@ export interface Player {
   deaths: number;
   respawnAt: number;
   shieldUntil: number;
+  seeker: boolean;
   brain: BotBrain | null;
 }
 
@@ -86,7 +87,9 @@ export interface Can { id: number; x: number; y: number; readyAt: number }
 
 interface Scheduled { at: number; slot: number; angle: number; attack: BurstAttack; charges: boolean; mult: number }
 
-export type GameMode = 'showdown' | 'brawl';
+export type GameMode = 'showdown' | 'brawl' | 'hide';
+/** Прятки: 20 с водящий «считает», потом 2 минуты ищет; пойманный тоже водит. */
+export const HIDE_COUNT = 20;
 
 export interface GameOptions {
   mode?: GameMode;      // showdown — до последнего; brawl — схватка с возрождениями
@@ -155,7 +158,7 @@ export class Game {
       hp: b.hp, cans: 0, ammo: b.ammo, superCharge: 0,
       alive: true, place: 0, facing: Math.atan2(this.map.h / 2 - spawn.y, this.map.w / 2 - spawn.x),
       lastCombat: -99, lastHurt: -99, nextAttackAt: 0, revealUntil: 0, invisibleUntil: 0, stunUntil: 0, gasAcc: 0,
-      queue: [], budget: 0, ack: 0, forced: null, kills: 0, deaths: 0, respawnAt: 0, shieldUntil: 0, brain: null,
+      queue: [], budget: 0, ack: 0, forced: null, kills: 0, deaths: 0, respawnAt: 0, shieldUntil: 0, seeker: false, brain: null,
     };
     if (bot) p.brain = new BotBrain(this, p);
     this.players.push(p);
@@ -169,7 +172,17 @@ export class Game {
     p.brain = new BotBrain(this, p);
   }
 
-  start() { this.started = true; }
+  start() {
+    this.started = true;
+    if (this.mode === 'hide' && this.players.length) {
+      // водящий — случайный игрок; прятки идут 20 с отсчёта + duration
+      this.players[Math.floor(this.rand() * this.players.length)].seeker = true;
+    }
+  }
+
+  /** Прятки: идёт ли ещё отсчёт (водящий стоит и ничего не видит). */
+  counting() { return this.mode === 'hide' && this.time < HIDE_COUNT; }
+  sameTeam(a: Player, b: Player) { return this.mode === 'hide' && a.seeker && b.seeker; }
 
   maxHp(p: Player) { return Math.round(p.brawler.hp * (1 + CAN_BONUS * p.cans)); }
   dmgMult(p: Player) {
@@ -200,6 +213,8 @@ export class Game {
   hiddenFrom(p: Player, viewer: Player | null): boolean {
     if (!p.alive || (viewer && viewer.slot === p.slot)) return false;
     if (viewer && !viewer.alive) return false;
+    // водящий во время отсчёта никого не видит
+    if (viewer && this.counting() && viewer.seeker && !p.seeker) return true;
     const invis = this.time < p.invisibleUntil;
     const bush = this.inBush(p) && this.time >= p.revealUntil;
     if (!invis && !bush) return false;
@@ -225,12 +240,16 @@ export class Game {
     if (Number.isFinite(angle)) p.queue.push({ k: 's', angle, dist: Number.isFinite(dist) ? dist : 99 });
   }
 
-  canAct(p: Player) { return p.alive && !p.forced && this.time >= p.stunUntil; }
+  canAct(p: Player) {
+    if (this.counting() && p.seeker) return false;
+    return p.alive && !p.forced && this.time >= p.stunUntil;
+  }
 
   // ---------- атаки ----------
 
   attack(p: Player, angle: number, dist = 99): boolean {
     if (!this.canAct(p) || p.ammo < 1 || this.time < p.nextAttackAt) return false;
+    if (this.mode === 'hide' && !p.seeker) return false; // прячущиеся не стреляют
     const a = p.brawler.attack;
     p.ammo -= 1;
     const busy = a.kind === 'burst' ? a.count * a.interval : 0;
@@ -314,6 +333,7 @@ export class Game {
 
   superAttack(p: Player, angle: number, dist: number): boolean {
     if (!this.canAct(p) || p.superCharge < 1) return false;
+    if (this.mode === 'hide' && !p.seeker) return false;
     const s = p.brawler.super;
     p.superCharge = 0;
     p.lastCombat = this.time;
@@ -379,6 +399,8 @@ export class Game {
 
   damagePlayer(t: Player, amount: number, src: Player | null, chargesSuper: boolean, angle = NaN) {
     if (!t.alive || amount <= 0 || this.time < t.shieldUntil) return;
+    if (src && this.sameTeam(src, t)) return;
+    if (this.mode === 'hide' && src?.seeker) amount *= 2.5;
     if (t.forced && (t.forced.kind === 'jump')) return; // в прыжке не попасть
     const dmg = Math.round(amount);
     t.hp -= dmg;
@@ -431,6 +453,7 @@ export class Game {
     p.queue.length = 0;
     p.deaths++;
     if (this.mode === 'brawl') { p.place = 0; p.respawnAt = this.time + 3; }
+    if (this.mode === 'hide') { p.place = 0; p.respawnAt = this.time + 3; p.seeker = true; }
     if (killer && killer !== p) killer.kills++;
     this.events.push(['die', p.slot, place, killer ? killer.slot : -1]);
     for (let i = 0; i < p.cans; i++) {
@@ -460,7 +483,7 @@ export class Game {
     this.updateMinions(dt);
     this.updateStatus(dt);
     this.pickups();
-    if (this.mode === 'brawl') for (const p of this.players) if (!p.alive && p.respawnAt && this.time >= p.respawnAt) this.respawn(p);
+    if (this.mode !== 'showdown') for (const p of this.players) if (!p.alive && p.respawnAt && this.time >= p.respawnAt) this.respawn(p);
     this.checkWin();
   }
 
@@ -480,9 +503,13 @@ export class Game {
   }
 
   /** Сколько секунд в начале боты не нападают: в схватке почти сразу. */
-  calm(t: number) { return this.mode === 'brawl' ? Math.min(t, 6) : t; }
+  calm(t: number) { return this.mode === 'brawl' ? Math.min(t, 6) : this.mode === 'hide' ? 0 : t; }
 
-  timeLeft() { return this.mode === 'brawl' ? Math.max(0, this.duration - this.time) : 0; }
+  timeLeft() {
+    if (this.mode === 'brawl') return Math.max(0, this.duration - this.time);
+    if (this.mode === 'hide') return Math.max(0, HIDE_COUNT + this.duration - this.time);
+    return 0;
+  }
 
   /** Сразу обработать пришедший ввод (атака не ждёт следующего тика). */
   processNow(p: Player) { if (this.started && !this.ended && !p.bot) this.processQueue(p, 0); }
@@ -653,6 +680,7 @@ export class Game {
       }
       for (const o of this.players) {
         if (!o.alive || o.slot === pr.owner || (o.forced && o.forced.kind === 'jump')) continue;
+        if (owner && this.sameTeam(owner, o)) continue;
         if ((o.x - pr.x) ** 2 + (o.y - pr.y) ** 2 < (PLAYER_RADIUS + pr.radius) ** 2) {
           this.damagePlayer(o, pr.damage * this.falloff(pr), owner ?? null, pr.chargesSuper, Math.atan2(pr.dy, pr.dx));
           return false;
@@ -799,6 +827,16 @@ export class Game {
 
   private checkWin() {
     if (this.ended || this.players.length < 2) return;
+    if (this.mode === 'hide') {
+      const hiders = this.players.filter((p) => !p.seeker);
+      if (!hiders.length || this.time >= HIDE_COUNT + this.duration) {
+        // выжившие прячущиеся — 1-е место; иначе побеждают водящие, лучший по поимкам первый
+        const order = hiders.length ? [...hiders, ...this.players.filter((p) => p.seeker)] : [...this.players].sort((a, b) => b.kills - a.kills);
+        order.forEach((p, i) => { p.place = hiders.length ? (p.seeker ? 2 : 1) : i + 1; });
+        this.ended = true;
+      }
+      return;
+    }
     if (this.mode === 'brawl') {
       if (this.time >= this.duration || this.players.some((p) => p.kills >= this.killGoal)) {
         // места по убийствам, при равенстве — у кого меньше смертей
@@ -847,6 +885,7 @@ export class Game {
       if (!o.connected && !o.bot) flags |= F_OFFLINE;
       if (this.time < o.revealUntil) flags |= F_REVEALED;
       if (this.time < o.shieldUntil) flags |= F_SHIELD;
+      if (o.seeker) flags |= F_SEEKER;
       p.push([o.slot, r100(o.x), r100(o.y), Math.ceil(o.hp), this.maxHp(o), o.cans, r100(o.ammo), r100(o.superCharge), flags, r100(o.facing)]);
     }
     const pr: ProjSnap[] = this.projectiles.map((q) => [q.id, q.look, r100(q.x), r100(q.y), r100(Math.atan2(q.dy, q.dx)), Math.round(q.speed * 10), q.owner,
@@ -857,7 +896,7 @@ export class Game {
     return {
       t: this.tickNo, ack: viewer ? viewer.ack : 0, el: Math.round(this.time * 10), gas: r100(this.gasHalf()),
       alive: this.aliveCount(), p, pr, mn, c, ar, ev: events,
-      ...(this.mode === 'brawl' ? { tl: Math.round(this.timeLeft() * 10), sc: this.players.map((o) => [o.slot, o.kills, o.deaths] as [number, number, number]) } : {}),
+      ...(this.mode !== 'showdown' ? { tl: Math.round(this.timeLeft() * 10), sc: this.players.map((o) => [o.slot, o.kills, o.deaths] as [number, number, number]), hd: this.players.filter((o) => !o.seeker).length } : {}),
     };
   }
 

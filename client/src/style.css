@@ -213,3 +213,4 @@ html, body {
 .overlay.profile .panel { max-height: 90vh; overflow: auto; }
 .overlay.profile .plist { max-height: 40vh; overflow: auto; }
 .toast .btn.small { width: auto; margin-left: 8px; }
+#hud.blind::before { content: ''; position: absolute; inset: 0; background: #000e; pointer-events: none; }

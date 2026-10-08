@@ -112,6 +112,7 @@ export class BotBrain {
     }
     if (g.time < this.unstuckUntil) return;
 
+    if (g.mode === 'hide') { this.hideThink(); return; }
     const enemies = g.players.filter((o) => o.alive && o !== p && !g.hiddenFrom(o, p));
     let nearest: Player | null = null, nd = Infinity;
     for (const o of enemies) {
@@ -189,6 +190,43 @@ export class BotBrain {
 
     // по пути отстреливаемся
     if (nearest && nd <= range * 0.95 && (this.mode === 'gas' || this.mode === 'flee')) this.shootAt(nearest, nd, false);
+  }
+
+  private bushGoal: { x: number; y: number; until: number } | null = null;
+
+  /** Прятки: прячущийся сидит в кусте подальше от водящих и удирает; водящий прочёсывает кусты. */
+  private hideThink() {
+    const g = this.game, p = this.p;
+    if (g.counting() && p.seeker) { this.path = []; this.moveX = this.moveY = 0; return; }
+    const seen = g.players.filter((o) => o.alive && o !== p && !g.hiddenFrom(o, p));
+    if (p.seeker) {
+      let t: Player | null = null, td = 14;
+      for (const o of seen) if (!o.seeker) { const d = Math.hypot(o.x - p.x, o.y - p.y); if (d < td) { td = d; t = o; } }
+      if (t) { this.mode = 'fight'; this.fight(t); return; }
+      this.mode = 'roam';
+      // идём проверять случайный куст
+      if (!this.bushGoal || g.time > this.bushGoal.until || Math.hypot(this.bushGoal.x - p.x, this.bushGoal.y - p.y) < 1) {
+        const bushes: number[] = [];
+        g.map.tiles.forEach((tt, i) => { if (tt === Tile.Bush) bushes.push(i); });
+        const ti = bushes[Math.floor(g.rand() * bushes.length)] ?? 0;
+        this.bushGoal = { x: (ti % g.map.w) + 0.5, y: Math.floor(ti / g.map.w) + 0.5, until: g.time + 10 };
+      }
+      const gx = Math.floor(this.bushGoal.x), gy = Math.floor(this.bushGoal.y);
+      if (!this.goTo((tx, ty) => tx === gx && ty === gy)) this.bushGoal = null;
+      return;
+    }
+    let s: Player | null = null, sd = Infinity;
+    for (const o of g.players) if (o.alive && o.seeker) { const d = Math.hypot(o.x - p.x, o.y - p.y); if (d < sd) { sd = d; s = o; } }
+    const visibleSeekerNear = s && sd < 6 && seen.includes(s);
+    const inBush = tileAt(g.map, Math.floor(p.x), Math.floor(p.y)) === Tile.Bush;
+    const farFromSeekers = (tx: number, ty: number) => g.players.every((o) => !o.alive || !o.seeker || Math.hypot(tx + 0.5 - o.x, ty + 0.5 - o.y) > 7);
+    if (visibleSeekerNear || (!inBush && g.time > 1)) {
+      this.mode = visibleSeekerNear ? 'flee' : 'roam';
+      if (!this.goTo((tx, ty) => tileAt(g.map, tx, ty) === Tile.Bush && farFromSeekers(tx, ty))) {
+        // кустов рядом нет — просто убегаем от водящего
+        if (s) { this.path = []; this.moveX = p.x - s.x; this.moveY = p.y - s.y; }
+      }
+    } else { this.mode = 'flee'; this.path = []; this.moveX = this.moveY = 0; }
   }
 
   private nearestCan() {

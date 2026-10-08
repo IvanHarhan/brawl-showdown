@@ -58,7 +58,7 @@ export class ShowdownRoom extends Room {
       if (msg?.brawler && BRAWLERS.some((b) => b.id === msg.brawler)) m.brawler = msg.brawler;
       if (msg?.name !== undefined) m.name = cleanName(msg.name);
       if (msg?.map && MAPS[msg.map] && client.sessionId === this.host) this.mapId = msg.map;
-      if ((msg?.mode === 'showdown' || msg?.mode === 'brawl') && client.sessionId === this.host) this.modeId = msg.mode;
+      if ((msg?.mode === 'showdown' || msg?.mode === 'brawl' || msg?.mode === 'hide') && client.sessionId === this.host) this.modeId = msg.mode;
       this.sendLobby();
     });
     this.onMessage('start', (client) => {
@@ -165,7 +165,7 @@ export class ShowdownRoom extends Room {
 
   startGame() {
     const mapText = readFileSync(mapFile(this.mapId), 'utf8');
-    const game = new Game(mapText, { mode: this.modeId, ...(this.fast ? { gasStart: 8, gasDuration: 45, duration: 45, killGoal: 6 } : {}) });
+    const game = new Game(mapText, { mode: this.modeId, ...(this.modeId === 'hide' ? { duration: 120 } : {}), ...(this.fast ? { gasStart: 8, gasDuration: 45, duration: 45, killGoal: 6 } : {}) });
     this.bySid.clear();
     const order = [...this.members].sort(() => Math.random() - 0.5);
     for (const m of order) this.bySid.set(m.sid, game.addPlayer(m.name, m.brawler, false, m.sid));
