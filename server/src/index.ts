@@ -4,6 +4,7 @@ import express from 'express';
 import { ShowdownRoom } from './rooms/ShowdownRoom';
 import { CLIENT_DIST, MAP_PATH } from './paths';
 import { log, recentLogs, liveRooms } from './log';
+import { mountAccounts } from './accounts';
 
 const port = Number(process.env.PORT ?? 2567);
 const started = Date.now();
@@ -25,6 +26,7 @@ const server = new Server({
     app.get('/logs', (req, res) => {
       res.type('text/plain; charset=utf-8').send(recentLogs(Math.min(1000, Number(req.query.n) || 300)));
     });
+    mountAccounts(app);
     // Для start-local.ps1: сервер сам раздаёт собранный клиент, если он есть.
     if (CLIENT_DIST && process.env.SERVE_CLIENT !== '0') app.use(express.static(CLIENT_DIST));
   },

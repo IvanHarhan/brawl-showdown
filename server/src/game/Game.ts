@@ -10,7 +10,7 @@ import {
   REVEAL_AFTER_SHOT, GAS_START, GAS_DURATION, GAS_MIN_HALF, GAS_DAMAGE, TICK_DT,
 } from '../../../shared/constants';
 import {
-  LOOKS, F_ALIVE, F_BUSH, F_INVIS, F_LOCKED, F_AIR, F_STUN, F_OFFLINE, F_REVEALED,
+  LOOKS, F_SHIELD, F_ALIVE, F_BUSH, F_INVIS, F_LOCKED, F_AIR, F_STUN, F_OFFLINE, F_REVEALED,
   GameEvent, Snapshot, PlayerSnap, ProjSnap, AreaSnap, MinionSnap, CanSnap, InputItem, StartMsg, RosterEntry, ResultEntry,
 } from '../../../shared/protocol';
 import { BotBrain } from './bots';
@@ -53,6 +53,9 @@ export interface Player {
   ack: number;
   forced: Forced | null;
   kills: number;
+  deaths: number;
+  respawnAt: number;
+  shieldUntil: number;
   brain: BotBrain | null;
 }
 
@@ -83,7 +86,12 @@ export interface Can { id: number; x: number; y: number; readyAt: number }
 
 interface Scheduled { at: number; slot: number; angle: number; attack: BurstAttack; charges: boolean; mult: number }
 
+export type GameMode = 'showdown' | 'brawl';
+
 export interface GameOptions {
+  mode?: GameMode;      // showdown — до последнего; brawl — схватка с возрождениями
+  duration?: number;    // схватка: длительность, с
+  killGoal?: number;    // схватка: столько убийств — досрочная победа
   gasStart?: number;
   gasDuration?: number;
   seed?: number;
@@ -119,10 +127,16 @@ export class Game {
   rand: () => number;
   gasStart: number;
   gasDuration: number;
+  mode: GameMode;
+  duration: number;
+  killGoal: number;
   private nextId = 1;
 
   constructor(mapText: string, opts: GameOptions = {}) {
     this.map = parseMap(mapText);
+    this.mode = opts.mode ?? 'showdown';
+    this.duration = opts.duration ?? 180;
+    this.killGoal = opts.killGoal ?? 15;
     this.gasStart = opts.gasStart ?? GAS_START;
     this.gasDuration = opts.gasDuration ?? GAS_DURATION;
     this.rand = mulberry32(opts.seed ?? (Date.now() & 0xffffffff));
@@ -141,7 +155,7 @@ export class Game {
       hp: b.hp, cans: 0, ammo: b.ammo, superCharge: 0,
       alive: true, place: 0, facing: Math.atan2(this.map.h / 2 - spawn.y, this.map.w / 2 - spawn.x),
       lastCombat: -99, lastHurt: -99, nextAttackAt: 0, revealUntil: 0, invisibleUntil: 0, stunUntil: 0, gasAcc: 0,
-      queue: [], budget: 0, ack: 0, forced: null, kills: 0, brain: null,
+      queue: [], budget: 0, ack: 0, forced: null, kills: 0, deaths: 0, respawnAt: 0, shieldUntil: 0, brain: null,
     };
     if (bot) p.brain = new BotBrain(this, p);
     this.players.push(p);
@@ -170,7 +184,7 @@ export class Game {
 
   gasHalf(t = this.time) {
     const full = Math.max(this.map.w, this.map.h) / 2 + 1;
-    if (t <= this.gasStart) return full;
+    if (this.mode === 'brawl' || t <= this.gasStart) return full;
     const k = Math.min(1, (t - this.gasStart) / this.gasDuration);
     return full + (GAS_MIN_HALF - full) * k;
   }
@@ -364,7 +378,7 @@ export class Game {
   // ---------- урон ----------
 
   damagePlayer(t: Player, amount: number, src: Player | null, chargesSuper: boolean, angle = NaN) {
-    if (!t.alive || amount <= 0) return;
+    if (!t.alive || amount <= 0 || this.time < t.shieldUntil) return;
     if (t.forced && (t.forced.kind === 'jump')) return; // в прыжке не попасть
     const dmg = Math.round(amount);
     t.hp -= dmg;
@@ -415,6 +429,8 @@ export class Game {
     p.place = place;
     p.forced = null;
     p.queue.length = 0;
+    p.deaths++;
+    if (this.mode === 'brawl') { p.place = 0; p.respawnAt = this.time + 3; }
     if (killer && killer !== p) killer.kills++;
     this.events.push(['die', p.slot, place, killer ? killer.slot : -1]);
     for (let i = 0; i < p.cans; i++) {
@@ -444,8 +460,29 @@ export class Game {
     this.updateMinions(dt);
     this.updateStatus(dt);
     this.pickups();
+    if (this.mode === 'brawl') for (const p of this.players) if (!p.alive && p.respawnAt && this.time >= p.respawnAt) this.respawn(p);
     this.checkWin();
   }
+
+  /** Схватка: возрождение на спавне подальше от врагов, полное HP, 1.5 с неуязвимости. */
+  respawn(p: Player) {
+    let best = this.map.spawns[0] ?? { x: this.map.w / 2, y: this.map.h / 2 }, bd = -1;
+    for (const s of this.map.spawns) {
+      let d = Infinity;
+      for (const o of this.players) if (o.alive && o !== p) d = Math.min(d, Math.hypot(o.x - s.x, o.y - s.y));
+      if (d > bd) { bd = d; best = s; }
+    }
+    p.x = best.x; p.y = best.y; p.vx = p.vy = 0;
+    p.alive = true; p.hp = p.brawler.hp; p.cans = 0; p.ammo = p.brawler.ammo;
+    p.forced = null; p.stunUntil = 0; p.invisibleUntil = 0; p.respawnAt = 0; p.place = 0;
+    p.shieldUntil = this.time + 1.5; p.lastCombat = this.time; p.queue.length = 0;
+    this.events.push(['spawn', p.slot]);
+  }
+
+  /** Сколько секунд в начале боты не нападают: в схватке почти сразу. */
+  calm(t: number) { return this.mode === 'brawl' ? Math.min(t, 6) : t; }
+
+  timeLeft() { return this.mode === 'brawl' ? Math.max(0, this.duration - this.time) : 0; }
 
   /** Сразу обработать пришедший ввод (атака не ждёт следующего тика). */
   processNow(p: Player) { if (this.started && !this.ended && !p.bot) this.processQueue(p, 0); }
@@ -762,6 +799,14 @@ export class Game {
 
   private checkWin() {
     if (this.ended || this.players.length < 2) return;
+    if (this.mode === 'brawl') {
+      if (this.time >= this.duration || this.players.some((p) => p.kills >= this.killGoal)) {
+        // места по убийствам, при равенстве — у кого меньше смертей
+        [...this.players].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths).forEach((p, i) => { p.place = i + 1; });
+        this.ended = true;
+      }
+      return;
+    }
     const alive = this.players.filter((p) => p.alive);
     if (alive.length <= 1) {
       for (const p of alive) p.place = 1;
@@ -771,7 +816,7 @@ export class Game {
 
   results(): ResultEntry[] {
     return this.players
-      .map((p) => ({ slot: p.slot, name: p.name, brawler: p.brawler.id, place: p.place || 1, bot: p.bot, kills: p.kills }))
+      .map((p) => ({ slot: p.slot, name: p.name, brawler: p.brawler.id, place: p.place || 1, bot: p.bot, kills: p.kills, deaths: p.deaths }))
       .sort((a, b) => a.place - b.place);
   }
 
@@ -784,7 +829,7 @@ export class Game {
   startMsg(you: number): StartMsg {
     return {
       map: mapToText(this.map), boxes: [...this.boxHp.entries()], roster: this.roster(), you, t: this.tickNo,
-      gasStart: this.gasStart, gasDuration: this.gasDuration,
+      gasStart: this.gasStart, gasDuration: this.gasDuration, mode: this.mode, duration: this.duration, killGoal: this.killGoal,
     };
   }
 
@@ -801,6 +846,7 @@ export class Game {
       if (this.time < o.stunUntil) flags |= F_STUN;
       if (!o.connected && !o.bot) flags |= F_OFFLINE;
       if (this.time < o.revealUntil) flags |= F_REVEALED;
+      if (this.time < o.shieldUntil) flags |= F_SHIELD;
       p.push([o.slot, r100(o.x), r100(o.y), Math.ceil(o.hp), this.maxHp(o), o.cans, r100(o.ammo), r100(o.superCharge), flags, r100(o.facing)]);
     }
     const pr: ProjSnap[] = this.projectiles.map((q) => [q.id, q.look, r100(q.x), r100(q.y), r100(Math.atan2(q.dy, q.dx)), Math.round(q.speed * 10), q.owner,
@@ -811,6 +857,7 @@ export class Game {
     return {
       t: this.tickNo, ack: viewer ? viewer.ack : 0, el: Math.round(this.time * 10), gas: r100(this.gasHalf()),
       alive: this.aliveCount(), p, pr, mn, c, ar, ev: events,
+      ...(this.mode === 'brawl' ? { tl: Math.round(this.timeLeft() * 10), sc: this.players.map((o) => [o.slot, o.kills, o.deaths] as [number, number, number]) } : {}),
     };
   }
 

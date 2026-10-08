@@ -1,11 +1,12 @@
 import { Room, Client } from '@colyseus/core';
 import { readFileSync } from 'node:fs';
-import { Game, Player } from '../game/Game';
+import { Game, Player, GameMode } from '../game/Game';
 import { BRAWLERS, getBrawler } from '../../../shared/brawlers';
 import { MAX_PLAYERS, RECONNECT_SECONDS, TICK_DT } from '../../../shared/constants';
 import type { InputItem, LobbyMsg, JoinOptions } from '../../../shared/protocol';
 import { MAPS, mapFile } from '../paths';
 import { log, liveRooms } from '../log';
+import { accountByToken, setPresenceRoom, addGameResult } from '../accounts';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const usedCodes = new Set<string>();
@@ -21,7 +22,7 @@ function makeCode() {
 
 const BOT_NAMES = ['Бот Шуша', 'Бот Кекс', 'Бот Гоша', 'Бот Пельмень', 'Бот Чика', 'Бот Зубр', 'Бот Кефир', 'Бот Шнур', 'Бот Пиксель', 'Бот Батон'];
 
-interface Member { sid: string; name: string; brawler: string; connected: boolean; client: Client | null }
+interface Member { sid: string; name: string; brawler: string; connected: boolean; client: Client | null; accountId?: string }
 
 function cleanName(n: unknown) {
   const s = String(n ?? '').replace(/[<>]/g, '').trim().slice(0, 14);
@@ -36,6 +37,7 @@ export class ShowdownRoom extends Room {
   game: Game | null = null;
   fast = false;
   mapId = 'koeln';
+  modeId: GameMode = 'showdown';
   private bySid = new Map<string, Player>();
   // сетевая статистика: пинг, который меряет сервер, и то, что прислал клиент
   private net = new Map<string, { name: string; rtt: number[]; cping: number; fps: number }>();
@@ -50,12 +52,13 @@ export class ShowdownRoom extends Room {
     this.setPatchRate(null);
     this.autoDispose = true;
 
-    this.onMessage('pick', (client, msg: { brawler?: string; name?: string; map?: string }) => {
+    this.onMessage('pick', (client, msg: { brawler?: string; name?: string; map?: string; mode?: string }) => {
       const m = this.member(client.sessionId);
       if (!m || this.phase === 'playing') return;
       if (msg?.brawler && BRAWLERS.some((b) => b.id === msg.brawler)) m.brawler = msg.brawler;
       if (msg?.name !== undefined) m.name = cleanName(msg.name);
       if (msg?.map && MAPS[msg.map] && client.sessionId === this.host) this.mapId = msg.map;
+      if ((msg?.mode === 'showdown' || msg?.mode === 'brawl') && client.sessionId === this.host) this.modeId = msg.mode;
       this.sendLobby();
     });
     this.onMessage('start', (client) => {
@@ -95,9 +98,11 @@ export class ShowdownRoom extends Room {
     log(`[${this.roomId}] создана${this.fast ? ' (fast)' : ''}`);
   }
 
-  onJoin(client: Client, options: JoinOptions) {
+  async onJoin(client: Client, options: JoinOptions) {
     if (this.phase !== 'lobby') throw new Error('Игра уже идёт');
-    this.members.push({ sid: client.sessionId, name: cleanName(options?.name), brawler: getBrawler(options?.brawler).id, connected: true, client });
+    const acc = await accountByToken(options?.token);
+    if (acc) setPresenceRoom(acc.id, this.roomId);
+    this.members.push({ sid: client.sessionId, name: acc ? acc.name : cleanName(options?.name), brawler: getBrawler(options?.brawler).id, connected: true, client, accountId: acc?.id });
     if (!this.host) this.host = client.sessionId;
     this.net.set(client.sessionId, { name: cleanName(options?.name), rtt: [], cping: 0, fps: 0 });
     log(`[${this.roomId}] вход ${cleanName(options?.name)} [${String(options?.dev ?? '?').slice(0, 40)}] (${this.members.length} чел.)`);
@@ -134,6 +139,7 @@ export class ShowdownRoom extends Room {
       if (p.alive && this.phase === 'playing') this.game.makeBot(p);
     }
     log(`[${this.roomId}] вышел ${this.member(client.sessionId)?.name ?? client.sessionId}`);
+    setPresenceRoom(this.member(client.sessionId)?.accountId, null);
     this.net.delete(client.sessionId);
     this.members = this.members.filter((m) => m.sid !== client.sessionId);
     if (this.host === client.sessionId) this.host = this.members.find((m) => m.connected)?.sid ?? this.members[0]?.sid ?? '';
@@ -150,7 +156,7 @@ export class ShowdownRoom extends Room {
 
   private lobbyMsg(): LobbyMsg {
     return {
-      code: this.roomId, host: this.host, phase: this.phase, map: this.mapId,
+      code: this.roomId, host: this.host, phase: this.phase, map: this.mapId, mode: this.modeId,
       players: this.members.map((m) => ({ sid: m.sid, name: m.name, brawler: m.brawler, connected: m.connected })),
     };
   }
@@ -159,7 +165,7 @@ export class ShowdownRoom extends Room {
 
   startGame() {
     const mapText = readFileSync(mapFile(this.mapId), 'utf8');
-    const game = new Game(mapText, this.fast ? { gasStart: 8, gasDuration: 45 } : {});
+    const game = new Game(mapText, { mode: this.modeId, ...(this.fast ? { gasStart: 8, gasDuration: 45, duration: 45, killGoal: 6 } : {}) });
     this.bySid.clear();
     const order = [...this.members].sort(() => Math.random() - 0.5);
     for (const m of order) this.bySid.set(m.sid, game.addPlayer(m.name, m.brawler, false, m.sid));
@@ -174,7 +180,7 @@ export class ShowdownRoom extends Room {
     }
     game.start();
     this.game = game;
-    log(`[${this.roomId}] старт: ${this.members.map((m) => m.name + '/' + m.brawler).join(', ')} + ${MAX_PLAYERS - this.members.length} ботов`);
+    log(`[${this.roomId}] старт (${this.modeId}, ${this.mapId}): ${this.members.map((m) => m.name + '/' + m.brawler).join(', ')} + ${MAX_PLAYERS - this.members.length} ботов`);
     this.phase = 'playing';
     this.lock();
     this.sendLobby();
@@ -209,6 +215,10 @@ export class ShowdownRoom extends Room {
     if (g.ended) {
       this.phase = 'ended';
       const res = g.results();
+      for (const m of this.members) {
+        const p = this.bySid.get(m.sid);
+        if (m.accountId && p) addGameResult(m.accountId, p.place === 1, p.kills).catch(() => {});
+      }
       log(`[${this.roomId}] конец, ${g.time.toFixed(0)} с, победил ${res[0]?.name} (${res[0]?.brawler})`);
       this.broadcast('end', { results: res });
       this.sendLobby();

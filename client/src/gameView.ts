@@ -7,7 +7,7 @@ import { ProjectileViews, Fx, GasView, AimView, makeBlobShadowMat, makeMinionMes
 import { Input, AimKind } from './input';
 import { Audio } from './audio';
 import { getBrawler, superAimType, superRange, Brawler } from '../../shared/brawlers';
-import { F_ALIVE, F_BUSH, F_INVIS, F_OFFLINE, F_AIR, GameEvent, StartMsg, Snapshot } from '../../shared/protocol';
+import { F_SHIELD, F_ALIVE, F_BUSH, F_INVIS, F_OFFLINE, F_AIR, GameEvent, StartMsg, Snapshot } from '../../shared/protocol';
 import { Tile, lineOfFire, tileAt } from '../../shared/map';
 import { TICK_DT, BOX_HP } from '../../shared/constants';
 
@@ -63,6 +63,7 @@ export class GameView {
   private canBorn = new Map<number, number>();
   private areaMeshes = new Map<number, THREE.Mesh>();
   private turn = new Map<number, number>();
+  private respawnAt = 0;
   zoomFar = (() => { try { return localStorage.getItem('brawl_zoom') !== 'near'; } catch { return true; } })();
   private zoomK = 1;
   toggleZoom(far = !this.zoomFar) {
@@ -99,6 +100,7 @@ export class GameView {
     this.hud.innerHTML = `
       <div class="fade" id="fade"></div><div id="tags"></div><div id="dmgs"></div><div id="feed"></div>
       <div class="top"><span class="pill" id="aliveP">👤 10</span><span class="pill" id="gasP"></span></div>
+      <div class="respawn hidden" id="respawn"></div>
       <div class="ping" id="ping"></div>
       <button class="zoombtn" id="zoom" title="Приблизить / отдалить (колёсико)">🔍</button>
       <div class="zone" id="moveZone"></div>
@@ -313,7 +315,13 @@ export class GameView {
         const cv = this.chars.get(slot);
         if (cv) { const p = cv.root.position; this.fx.burst(p.x, 0.8, p.z, 0xffffff, 18, 4, 5); this.fx.ring(p.x, p.z, 1.6, 0xffffff); this.fx.smoke(p.x, 0.5, p.z, 8, 1.3, 0xcfc8d8, 0.9, 1.2, 1.4); }
         const r = w.rosterOf(slot);
-        if (slot === w.you) {
+        if (slot === w.you && w.mode === 'brawl') {
+          // схватка: отсчёт до возрождения вместо экрана поражения
+          this.dead = true;
+          this.respawnAt = now + 3000;
+          if (r) this.audio.voice(r.brawler, 'death', 1, true);
+          this.audio.sfx('death');
+        } else if (slot === w.you) {
           this.dead = true;
           this.myPlace = place;
           if (r) this.audio.voice(r.brawler, 'death', 1, true);
@@ -359,6 +367,13 @@ export class GameView {
         } else {
           this.fx.burst(x, 0.6, y, 0xffffff, 3, 1.5, 1.5);
         }
+        break;
+      }
+      case 'spawn': {
+        const [, slot] = e;
+        if (slot === w.you) { this.dead = false; this.respawnAt = 0; this.introAt = 0; }
+        const cv = this.chars.get(slot);
+        if (cv) { this.fx.ring(cv.root.position.x, cv.root.position.z, 1.4, 0x7fd3ff); this.fx.burst(cv.root.position.x, 0.6, cv.root.position.z, 0x7fd3ff, 12, 3, 4); }
         break;
       }
       case 'gas': {
@@ -539,7 +554,8 @@ export class GameView {
     cv.root.rotation.y = cur;
     const isMe = v.slot === w.you;
     let op = 1;
-    if (v.flags & F_INVIS) op = isMe ? 0.4 : 0.18 + 0.15 * Math.sin(now / 50);
+    if (v.flags & F_SHIELD) op = 0.55 + 0.35 * Math.abs(Math.sin(now / 90));
+    else if (v.flags & F_INVIS) op = isMe ? 0.4 : 0.18 + 0.15 * Math.sin(now / 50);
     else if (isMe && (v.flags & F_BUSH)) op = 0.55;
     cv.opacity = op;
     // «бежит» с удержанием 200 мс: у интерполированных игроков сдвиг между кадрами бывает нулевым
@@ -738,11 +754,27 @@ export class GameView {
   private updateHud(me: ReturnType<ClientWorld['meLatest']>) {
     const info = this.world.info();
     const alive = this.hud.querySelector('#aliveP') as HTMLElement;
-    alive.textContent = `👤 ${info.alive}`;
     const gasP = this.hud.querySelector('#gasP') as HTMLElement;
+    const rs = this.hud.querySelector('#respawn') as HTMLElement;
+    if (this.world.mode === 'brawl') {
+      // схватка: таймер, мои убийства, лидер, отсчёт возрождения
+      const t = Math.ceil(info.tl);
+      const mine = info.sc.find((s) => s[0] === this.world.you);
+      const lead = [...info.sc].sort((a, b) => b[1] - a[1])[0];
+      const leader = lead ? this.world.rosterOf(lead[0])?.name ?? '?' : '';
+      alive.textContent = `⏱ ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      gasP.textContent = `💀 ${mine?.[1] ?? 0}  ·  👑 ${leader} ${lead?.[1] ?? 0}/${this.world.killGoal}`;
+      gasP.classList.remove('gaswarn');
+      const left = Math.ceil((this.respawnAt - performance.now()) / 1000);
+      rs.classList.toggle('hidden', !this.dead || left <= 0);
+      rs.textContent = `Возрождение через ${left}`;
+    } else {
+    rs.classList.add('hidden');
+    alive.textContent = `👤 ${info.alive}`;
     const left = Math.ceil(this.world.gasStart - info.el);
     gasP.textContent = left > 0 ? `☁ газ через ${left}` : '☁ газ сжимается';
     gasP.classList.toggle('gaswarn', left <= 0);
+    }
     const pingEl = this.hud.querySelector('#ping') as HTMLElement;
     const pg = Math.round(this.ping);
     pingEl.textContent = pg ? `📶 ${pg} мс` : '📶 …';

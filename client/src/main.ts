@@ -3,6 +3,7 @@ import './style.css';
 import * as THREE from 'three';
 import type { Room } from '@colyseus/sdk';
 import { Net, SERVER_URL } from './net';
+import { Account } from './account';
 import { Input } from './input';
 import { Audio } from './audio';
 import { GameView } from './gameView';
@@ -56,6 +57,105 @@ const S = {
 };
 
 const input = new Input({ fire: (k, a, m, auto) => S.game?.fire(k, a, m, auto) });
+
+// ---------- аккаунт и друзья ----------
+
+const account = new Account();
+const accBtn = document.createElement('button');
+accBtn.className = 'accbtn';
+document.body.appendChild(accBtn);
+accBtn.addEventListener('click', () => openProfile());
+function renderAccBtn() {
+  const p = account.profile;
+  const reqs = p?.requests.length ?? 0;
+  accBtn.textContent = p ? `👤 ${p.name}${reqs ? ` · ${reqs}` : ''}` : '👤 Войти';
+  accBtn.classList.toggle('hidden', S.screen === 'game');
+}
+account.onChange = () => { renderAccBtn(); renderProfile(); };
+account.onInvite = (from, code) => {
+  if (S.room?.roomId === code) return;
+  const t = el('div', 'toast');
+  t.innerHTML = `<span></span> <button class="btn small">Зайти</button>`;
+  (t.firstElementChild as HTMLElement).textContent = `${from} зовёт в комнату ${code}`;
+  t.querySelector('button')!.addEventListener('click', async () => { t.remove(); if (S.room) await backToMenu(); connect(() => net.join(code, joinOpts())); });
+  ui.appendChild(t);
+  audio.sfx('can');
+  setTimeout(() => t.remove(), 15000);
+};
+
+let profileEl: HTMLElement | null = null;
+function openProfile() { profileEl?.remove(); profileEl = el('div', 'overlay profile'); ui.appendChild(profileEl); renderProfile(); }
+function renderProfile() {
+  const o = profileEl;
+  if (!o || !o.isConnected) return;
+  const p = account.profile;
+  o.innerHTML = '';
+  const panel = el('div', 'panel');
+  o.appendChild(panel);
+  const close = el('button', 'btn small gray', 'Закрыть');
+  close.addEventListener('click', () => o.remove());
+  if (!p) {
+    panel.innerHTML = `<div class="verdict">Аккаунт</div><div class="subtitle">Ник и PIN-код — для статистики и друзей</div>
+      <input class="input" id="an" maxlength="14" placeholder="Ник" autocomplete="username" />
+      <input class="input" id="ap" maxlength="8" placeholder="PIN (4–8 цифр)" inputmode="numeric" type="password" autocomplete="current-password" />
+      <div class="row"><button class="btn" id="alog" style="flex:1">Войти</button><button class="btn blue" id="areg" style="flex:1">Создать</button></div>`;
+    (panel.querySelector('#an') as HTMLInputElement).value = S.name;
+    const go = (kind: 'login' | 'register') => async () => {
+      try {
+        await account.enter(kind, (panel.querySelector('#an') as HTMLInputElement).value, (panel.querySelector('#ap') as HTMLInputElement).value);
+        S.name = account.profile!.name;
+        toast(kind === 'register' ? 'Аккаунт создан' : 'Вход выполнен');
+      } catch (e) { toast((e as Error).message); }
+    };
+    panel.querySelector('#alog')!.addEventListener('click', go('login'));
+    panel.querySelector('#areg')!.addEventListener('click', go('register'));
+    panel.appendChild(close);
+    return;
+  }
+  const code = S.room?.roomId;
+  panel.innerHTML = `<div class="verdict"></div>
+    <div class="stats"><span class="stat">🎮 ${p.stats.games}</span><span class="stat">🏆 ${p.stats.wins}</span><span class="stat">💀 ${p.stats.kills}</span></div>
+    <div class="row"><input class="input" id="fn" maxlength="14" placeholder="Ник друга" style="flex:2" /><button class="btn small" id="fadd" style="flex:1">Добавить</button></div>
+    <div class="plist" id="flist"></div>`;
+  (panel.querySelector('.verdict') as HTMLElement).textContent = p.name;
+  panel.querySelector('#fadd')!.addEventListener('click', async () => {
+    const n = (panel.querySelector('#fn') as HTMLInputElement).value.trim();
+    if (!n) return;
+    try { await account.addFriend(n); toast('Заявка отправлена'); } catch (e) { toast((e as Error).message); }
+  });
+  const list = panel.querySelector('#flist')!;
+  for (const r of p.requests) {
+    const row = el('div', 'pl');
+    row.innerHTML = `<span class="who"></span><button class="btn small">✓</button><button class="btn small gray">✕</button>`;
+    (row.querySelector('.who') as HTMLElement).textContent = `${r.name} хочет дружить`;
+    const [yes, no] = row.querySelectorAll('button');
+    yes.addEventListener('click', () => account.answer(r.id, true));
+    no.addEventListener('click', () => account.answer(r.id, false));
+    list.appendChild(row);
+  }
+  if (!p.friends.length && !p.requests.length) list.appendChild(el('div', 'subtitle', 'Друзей пока нет — добавь по нику'));
+  for (const f of p.friends) {
+    const row = el('div', 'pl');
+    row.innerHTML = `<span class="dot" style="background:${f.online ? '#5bd45b' : '#777'}"></span><span class="who"></span>`;
+    (row.querySelector('.who') as HTMLElement).textContent = `${f.name}${f.room ? ` · в комнате ${f.room}` : f.online ? ' · онлайн' : ''}`;
+    if (f.room && f.room !== code) {
+      const b = el('button', 'btn small', 'Зайти');
+      b.addEventListener('click', async () => { o.remove(); if (S.room) await backToMenu(); connect(() => net.join(f.room!, joinOpts())); });
+      row.appendChild(b);
+    }
+    if (code && f.online && f.room !== code) {
+      const b = el('button', 'btn small blue', 'Позвать');
+      b.addEventListener('click', async () => { try { await account.invite(f.id, code); toast(`${f.name} приглашён`); } catch (e) { toast((e as Error).message); } });
+      row.appendChild(b);
+    }
+    list.appendChild(row);
+  }
+  const out = el('button', 'btn small gray', 'Выйти из аккаунта');
+  out.addEventListener('click', () => account.logout());
+  const row = el('div', 'row');
+  row.append(out, close);
+  panel.appendChild(row);
+}
 
 // тест-хук для Playwright
 (window as unknown as Record<string, unknown>).__brawl = {
@@ -150,6 +250,7 @@ const DESCR: Record<string, string> = {
 
 function showMenu() {
   S.screen = 'menu';
+  renderAccBtn();
   clearUi();
   const scr = el('div', 'screen split');
   scr.innerHTML = `
@@ -168,7 +269,8 @@ function showMenu() {
     </div>`;
   ui.appendChild(scr);
   const nick = scr.querySelector('#nick') as HTMLInputElement;
-  nick.value = S.name;
+  nick.value = account.profile?.name ?? S.name;
+  nick.disabled = !!account.profile;
   nick.addEventListener('input', () => { S.name = nick.value; localStorage.setItem('brawl_name', S.name); });
   const render = () => {
     const b = getBrawler(S.brawler);
@@ -203,8 +305,8 @@ function atkDamage(id: string) {
 }
 
 function joinOpts() {
-  const name = (S.name || '').trim() || 'Игрок' + Math.floor(Math.random() * 90 + 10);
-  return { name, brawler: S.brawler, fast: params.has('fast'), dev: deviceInfo() };
+  const name = account.profile?.name || (S.name || '').trim() || 'Игрок' + Math.floor(Math.random() * 90 + 10);
+  return { name, brawler: S.brawler, fast: params.has('fast'), dev: deviceInfo(), token: account.token ?? undefined };
 }
 
 /** Устройство и тип сети — только для серверного лога пинга. */
@@ -290,6 +392,7 @@ function enterRoom(room: Room) {
 
 function showLobby() {
   S.screen = 'lobby';
+  renderAccBtn();
   clearUi();
   const scr = el('div', 'screen split');
   scr.id = 'lobby';
@@ -312,6 +415,8 @@ function renderLobby() {
     <div class="row"><button class="btn small blue" id="share" style="flex:1">Поделиться ссылкой</button><button class="btn small gray" id="leave">Выйти</button></div>
     <div class="subtitle" style="margin-top:10px">Игроки ${L?.players.length ?? 0}/10 — остальных заменят боты</div>
     <div class="plist" id="plist"></div>
+    <div class="subtitle" style="margin-top:8px">Режим</div>
+    <div class="chips" id="modes"></div>
     <div class="subtitle" style="margin-top:8px">Карта</div>
     <div class="chips" id="maps"></div>
     </div>
@@ -337,6 +442,14 @@ function renderLobby() {
     chips.appendChild(c);
   }
   if (me) setPreview(me.brawler);
+  const modes = scr.querySelector('#modes')!;
+  for (const [id, title] of [['showdown', 'Шоудаун'], ['brawl', 'Схватка (возрождения)']]) {
+    const c = el('button', 'chip' + (L?.mode === id ? ' on' : ''));
+    c.textContent = title;
+    c.disabled = !isHost;
+    c.addEventListener('click', () => S.room?.send('pick', { mode: id }));
+    modes.appendChild(c);
+  }
   const maps = scr.querySelector('#maps')!;
   for (const [id, title] of [['koeln', 'Кёльн'], ['desert', 'Пустыня']]) {
     const c = el('button', 'chip' + (L?.map === id ? ' on' : ''));
@@ -359,6 +472,7 @@ function startGame(msg: StartMsg) {
   if (S.game && S.screen === 'game') { S.game.restart(msg); return; }
   clearUi();
   S.screen = 'game';
+  renderAccBtn();
   S.results = null;
   S.game = new GameView(msg, S.room!, camera, input, audio, ui, { onMyDeath: (place) => showDeath(place) });
 }
@@ -402,7 +516,7 @@ function showResults(msg: EndMsg) {
   const list = o.querySelector('#rlist')!;
   for (const r of msg.results) {
     const row = el('div', 'pl' + (r.slot === you ? ' me' : ''));
-    row.innerHTML = `<b>#${r.place}</b><span class="who"></span><span class="tag">${getBrawler(r.brawler).name}</span>${r.kills ? `<span class="tag">💀${r.kills}</span>` : ''}`;
+    row.innerHTML = `<b>#${r.place}</b><span class="who"></span><span class="tag">${getBrawler(r.brawler).name}</span><span class="tag">💀${r.kills}${S.lobby?.mode === 'brawl' ? ' / ☠' + (r.deaths ?? 0) : ''}</span>`;
     (row.querySelector('.who') as HTMLElement).textContent = r.name;
     list.appendChild(row);
   }
