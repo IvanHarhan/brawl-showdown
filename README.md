@@ -1,3 +1,23 @@
+# Showdown — multiplayer browser game
+
+**Play:** https://brawl-showdown.onrender.com
+
+**EN** · A 3D multiplayer browser game in the style of Brawl Stars "Showdown": up to 10 fighters on one map, bots fill the empty slots, poison gas shrinks the zone, the last one standing wins. Works on phones (touch sticks) and PCs. Authoritative server at 20 ticks/s with client-side prediction and interpolation; fighters modelled in Blender by script, voices generated with Silero TTS; end-to-end tests run 4 real browser clients + 6 bots with 150 ms ping.
+
+**DE** · Ein 3D-Multiplayer-Browserspiel im Stil von Brawl Stars „Showdown“: bis zu 10 Kämpfer auf einer Karte, Bots füllen freie Plätze, Giftgas verkleinert die Zone, der Letzte gewinnt. Läuft auf dem Handy (Touch-Steuerung) und am PC. Autoritativer Server mit 20 Ticks/s, Client-Prediction und Interpolation; Figuren per Skript in Blender gebaut, Stimmen mit Silero TTS erzeugt; E2E-Tests mit 4 echten Browser-Clients + 6 Bots bei 150 ms Ping.
+
+**Stack:** TypeScript · Three.js · Vite · Colyseus (Node.js) · Blender Python · Playwright · Render + Netlify
+
+| Battle | Lobby |
+|---|---|
+| ![Battle](docs/battle.png) | ![Lobby](docs/lobby.png) |
+
+![Fighters](docs/brawlers.png)
+
+The detailed docs below are in Russian.
+
+---
+
 # Шоудаун
 
 Браузерная 3D-игра в стиле Brawl Stars, режим «Шоудаун соло». На карте 10 бойцов, свободные места занимают боты, газ сжимает зону, побеждает последний выживший.
